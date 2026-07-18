@@ -21,7 +21,7 @@ This file is the single source of truth for project progress. A checked item mus
 - [x] Create `gleb-projects-work/budget-app` on Vercel.
 - [x] Connect the Vercel project to the GitHub repository.
 - [x] Register Telegram bot `@budgetgleb_bot`.
-- [ ] Add `TELEGRAM_BOT_TOKEN` to `.env.local` without posting it in chat.
+- [x] Add `TELEGRAM_BOT_TOKEN` to `.env.local` without posting it in chat; verify it with Telegram `getMe`.
 - [ ] Add `TELEGRAM_BOT_TOKEN` to Vercel environment variables.
 - [ ] Determine the owner's numeric Telegram user ID and add it to `TELEGRAM_ALLOWED_USER_IDS` locally and in Vercel.
 
@@ -44,7 +44,7 @@ Exit condition: currencies, categories, accounts, transfer policy, examples, and
 - [ ] Create the `Транзакции` database in Notion.
 - [ ] Add the agreed schema: title, date, direction, original amount, original currency, EUR rate, EUR amount, category, account, note, Telegram message ID, and created time.
 - [ ] Create month, category, income, and expense views.
-- [ ] Create a private Notion integration with read/write content access.
+- [x] Create a private Notion integration with read, insert, and update content access; verify its token with Notion `users/me`.
 - [ ] Share only the budget page/database with that integration.
 - [ ] Add `NOTION_API_KEY` and `NOTION_BUDGET_DATABASE_ID` locally and in Vercel.
 - [ ] Implement the Notion transaction mapper and repository.
@@ -124,4 +124,3 @@ Exit condition: the production bot passes the smoke test and can be safely opera
 1. Complete the remaining Phase 0 secret and Telegram user-ID setup.
 2. Supply the Phase 1 lists, examples, transfer policy, and raw-text preference.
 3. Create the Phase 2 Notion database and private integration.
-
