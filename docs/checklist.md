@@ -39,16 +39,20 @@ Exit condition: the bot token and owner allowlist are configured in both environ
 - [x] Confirm income categories: `Фриланс` and `Работа`.
 - [x] Treat fuel and bike rental as `Транспорт`; preserve `Бензин` and `Аренда байка` in the comment instead of creating categories.
 - [x] Confirm the initial accounts: `Наличные`, `Карта`, and `Сбережения`.
+- [ ] Enter the opening total balance in EUR and the date from which balance tracking begins.
+- [ ] Decide whether the MVP tracks one total EUR balance or separate balances for each account.
 - [ ] Decide whether transfers between personal accounts are included in the first version.
 - [ ] Provide 10 representative Telegram transaction messages, including slang and abbreviations.
 - [ ] Decide whether raw Telegram text is stored privately for audit or discarded after confirmation.
 
-Exit condition: currencies, categories, accounts, transfer policy, examples, and raw-text policy are documented.
+Exit condition: currencies, categories, accounts, opening-balance policy, transfer policy, examples, and raw-text policy are documented.
 
 ## Phase 2 — Notion Ledger
 
 - [x] Create the `Транзакции` database in Notion and verify API access.
 - [x] Add and verify the MVP schema: `Операция`, `Дата`, `Тип`, `Исходная сумма`, `Валюта`, `Курс к EUR`, `Сумма EUR`, `Категория`, `Счёт`, `Комментарий`, and `Telegram ID`.
+- [ ] Add and verify the number property `Остаток EUR` containing the running balance after each transaction.
+- [ ] Store the opening EUR balance and its effective date in a single controlled settings location, not as an ordinary expense or income.
 - [ ] Create month, category, income, and expense views.
 - [x] Create a private Notion integration with read, insert, and update content access; verify its token with Notion `users/me`.
 - [x] Share the `Личный бюджет` page and nested `Транзакции` database with that integration; verify read access.
@@ -58,7 +62,7 @@ Exit condition: currencies, categories, accounts, transfer policy, examples, and
 - [ ] Implement the Notion transaction mapper and repository.
 - [ ] Verify an idempotent test write and delete the test row manually.
 
-Exit condition: one verified transaction can be written exactly once through the repository.
+Exit condition: one verified transaction can be written exactly once through the repository with its resulting EUR balance.
 
 ## Phase 3 — OpenAI Text Processing
 
@@ -95,9 +99,11 @@ Exit condition: tested conversions are deterministic and retain all audit fields
 - [ ] Parse an informal message through OpenAI.
 - [ ] Show the normalized draft and confirmation buttons.
 - [ ] Convert the confirmed amount to EUR.
+- [ ] Calculate `Остаток EUR` after every confirmed transaction: income adds, expense subtracts, and a transfer does not change the total balance.
+- [ ] Recalculate the affected running balances after a backdated transaction is inserted, corrected, or deleted.
 - [ ] Save the confirmed transaction to Notion.
 - [ ] Prevent duplicate writes using the Telegram message ID.
-- [ ] Return a concise receipt containing original amount, EUR amount, category, account, and date.
+- [ ] Return a concise receipt containing original amount, EUR amount, remaining EUR balance, category, account, and date.
 
 Exit condition: one real Telegram message completes the full confirmed path into Notion exactly once.
 
@@ -109,6 +115,7 @@ Exit condition: one real Telegram message completes the full confirmed path into
 - [ ] Implement `/month` summary text.
 - [ ] Implement `/chart` doughnut chart and send the PNG to Telegram.
 - [ ] Add income-versus-expense totals and remaining balance.
+- [ ] Show the latest verified `Остаток EUR` as the current available total.
 - [ ] Handle an empty month without generating a misleading chart.
 - [ ] Optionally add an interactive Chart.js dashboard on Vercel after the Telegram report is stable.
 
@@ -117,6 +124,7 @@ Exit condition: the bot returns verified monthly totals and a chart whose segmen
 ## Phase 7 — Tests, Deployment, and Operations
 
 - [ ] Add unit tests for config, validation, AI result normalization, conversion, aggregation, and chart configuration.
+- [ ] Add running-balance tests for income, expense, transfer, same-day ordering, and backdated corrections.
 - [ ] Add integration tests with mocked OpenAI, Frankfurter, Notion, QuickChart, and Telegram responses.
 - [ ] Run `npm run typecheck`.
 - [ ] Run `npm test`.
@@ -159,8 +167,9 @@ Exit condition: voice capture is private, measurable, and every extracted transa
 
 ## Current Next Actions
 
-1. Decide transfer handling and raw-text retention; supply 10 representative Telegram messages.
-2. Create the remaining Notion views and implement the first verified repository write.
-3. Create and add the OpenAI API key, then test structured parsing before wiring the full Telegram flow.
-4. Wire the tested EUR converter into the confirmed Telegram transaction flow.
-5. Keep Phases 8–9 parked until the Telegram MVP completes its production smoke test.
+1. Provide the opening EUR balance and effective date; decide whether the balance is total or per account.
+2. Decide transfer handling and raw-text retention; supply 10 representative Telegram messages.
+3. Add `Остаток EUR`, create the remaining Notion views, and implement the first verified repository write.
+4. Create and add the OpenAI API key, then test structured parsing before wiring the full Telegram flow.
+5. Wire the tested EUR converter and running-balance calculation into the confirmed Telegram transaction flow.
+6. Keep Phases 8–9 parked until the Telegram MVP completes its production smoke test.

@@ -35,6 +35,10 @@ This is the living rules file for the budget app. We update it when decisions be
 - AI parsing must return structured data and must never write directly to Notion.
 - A parsed transaction requires user confirmation before it is saved.
 - Currency conversion and report totals are calculated by application code, not by the language model.
+- The opening balance is a controlled EUR setting with an effective date; it is not recorded as a fake income transaction.
+- Every confirmed transaction stores `Остаток EUR`, the running balance immediately after that operation.
+- For the total balance, income adds the converted EUR amount, expense subtracts it, and transfers between personal accounts do not change it.
+- Backdated inserts, corrections, and deletions require recalculation of every later running balance in deterministic date/order sequence.
 - Currency conversion uses Frankfurter v2 without an API key and targets EUR. EUR-to-EUR uses rate `1` without a network request.
 - Request the rate for the transaction date. Accept the API's same-day rate or the latest returned prior rate, but never a rate after the transaction date.
 - Send only the current transaction text and controlled category/account lists to the language model, not the complete budget history.
@@ -80,6 +84,7 @@ This is the living rules file for the budget app. We update it when decisions be
 - The 10 representative Telegram messages used to verify AI parsing.
 - Remaining Notion views and the first idempotent repository write.
 - OpenAI API billing/key setup and live parser verification.
+- Opening EUR balance, its effective date, and whether balances are total-only or separated by account.
 
 ## Session Handoff — 2026-07-18
 
