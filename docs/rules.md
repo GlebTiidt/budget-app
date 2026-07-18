@@ -62,6 +62,16 @@ This is the living rules file for the budget app. We update it when decisions be
 - Prefer explicit properties over packed JSON text fields.
 - All Notion writes should be idempotent when possible.
 - Store integration IDs or source hashes to prevent duplicate transactions.
+- The current Notion workspace is the owner's private ledger. Never write another user's transactions or settings into it.
+
+## Multi-User Rules
+
+- Adding a Telegram ID is not sufficient multi-user support; access must include onboarding, revocation, authorization, and isolated storage.
+- Do not use a local text, JSON, or SQLite file on Vercel as the persistent multi-user database.
+- Every transaction, category, account, balance, and preference must be owned by exactly one authenticated user and scoped in every query.
+- User-created categories belong only to that user; creating or editing one must never change the owner's Notion options or another user's categories.
+- Multi-user OpenAI usage requires per-user rate limits and a documented spending policy before access is expanded.
+- The storage adapter must preserve the option to keep the owner on Notion while invited users use a separate managed database.
 
 ## Engineering Rules
 
@@ -85,6 +95,7 @@ This is the living rules file for the budget app. We update it when decisions be
 - Remaining Notion views and the first idempotent repository write.
 - OpenAI API billing/key setup and live parser verification.
 - Opening EUR balance, its effective date, and whether balances are total-only or separated by account.
+- Multi-user database provider, owner-Notion versus unified-storage strategy, invitation policy, and OpenAI cost policy.
 
 ## Session Handoff — 2026-07-18
 
@@ -95,4 +106,4 @@ This is the living rules file for the budget app. We update it when decisions be
 - Frankfurter v2 conversion to EUR is implemented and tested for EUR, VND, USD, and a prior-date fallback. It needs no API key.
 - OpenAI text parsing is implemented but cannot be tested live until `OPENAI_API_KEY` is added locally and in Vercel. A ChatGPT subscription is not an API credential.
 - Continue strictly from `Current Next Actions` in `docs/checklist.md`.
-- Raw Telegram text retention policy.
+- Multi-user storage and isolation planning is captured in Phase 10; implementation remains after the personal Telegram MVP.

@@ -165,11 +165,31 @@ Exit condition: the iOS app can safely create and review the same transactions a
 
 Exit condition: voice capture is private, measurable, and every extracted transaction is individually reviewable before saving.
 
+## Phase 10 — Multi-User Bot and Private Storage (Future)
+
+- [ ] Decide whether access is invite-only, owner-approved, or open registration; implement access grant and revocation.
+- [ ] Keep the owner's existing Notion workspace private and confirm that no other user's transactions are written there.
+- [ ] Compare a managed relational database with per-user Notion integrations; explicitly reject local text/JSON files as persistent Vercel storage.
+- [ ] Choose the production database and document free-tier limits, backups, recovery, expected cost, and vendor migration path.
+- [ ] Decide whether the owner continues using Notion while other users use the database, or whether all users eventually move to one backend.
+- [ ] Design user-scoped records for profiles, transactions, categories, accounts, opening balances, preferences, and Telegram identities.
+- [ ] Enforce data isolation in every query and database constraint so one Telegram user can never read or modify another user's budget.
+- [ ] Seed default categories for a new user and allow that user to create, rename, merge, and archive only their own categories.
+- [ ] Add per-user base currency, timezone, accounts, opening balance, and report settings.
+- [ ] Define whether OpenAI usage is owner-funded, quota-limited, or paid by each user; add abuse and spending limits before invitations expand.
+- [ ] Add onboarding, privacy notice, data export, account deletion, and full access-revocation flows.
+- [ ] Prevent sensitive transaction text and personal identifiers from entering logs, analytics, or another user's AI request.
+- [ ] Add automated tenant-isolation, authorization, category-ownership, export, deletion, backup, and restore tests.
+- [ ] Run a closed pilot with one invited user before allowing broader access.
+
+Exit condition: an invited user has an isolated budget and custom categories without access to the owner's Notion or any other user's data.
+
 ## Current Next Actions
 
 1. Provide the opening EUR balance and effective date; decide whether the balance is total or per account.
-2. Decide transfer handling and raw-text retention; supply 10 representative Telegram messages.
-3. Add `Остаток EUR`, create the remaining Notion views, and implement the first verified repository write.
-4. Create and add the OpenAI API key, then test structured parsing before wiring the full Telegram flow.
-5. Wire the tested EUR converter and running-balance calculation into the confirmed Telegram transaction flow.
-6. Keep Phases 8–9 parked until the Telegram MVP completes its production smoke test.
+2. Plan the Phase 10 storage approach: personal Notion for the owner versus a separate managed database for invited users.
+3. Decide transfer handling and raw-text retention; supply 10 representative Telegram messages.
+4. Add `Остаток EUR`, create the remaining Notion views, and implement the first verified repository write.
+5. Create and add the OpenAI API key, then test structured parsing before wiring the full Telegram flow.
+6. Wire the tested EUR converter and running-balance calculation into the confirmed Telegram transaction flow.
+7. Keep implementation of Phases 8–10 parked until the Telegram MVP completes its production smoke test.
