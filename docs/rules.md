@@ -8,6 +8,7 @@ This is the living rules file for the budget app. We update it when decisions be
 - Work in checklist order and update it in the same change that completes a milestone.
 - Do not mark scaffolding, configuration placeholders, or unverified external integrations as complete.
 - A required item may be skipped only when it is explicitly marked blocked with a reason.
+- At the start of every future work session, read `docs/checklist.md` and continue from `Current Next Actions`; update it before ending the session.
 
 ## Product Principles
 
@@ -23,7 +24,9 @@ This is the living rules file for the budget app. We update it when decisions be
 - Every transaction must have amount, currency, direction, date, and source.
 - Direction is either `expense`, `income`, or `transfer`.
 - Categories should be normalized before saving to Notion.
-- The current category list is `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, `Другое`, `Кофешоп`, and `Еда вне дома`.
+- The current expense category list is `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, `Другое`, `Кофешоп`, `Еда вне дома`, and `Спорт`.
+- The income categories are `Фриланс` and `Работа`.
+- Fuel and bike-rental payments use the category `Транспорт`; `Бензин` and `Аренда байка` are purposes kept in the normalized description or comment, not separate categories.
 - AI must prefer an existing category. If none fits, it may suggest one normalized new category.
 - A new category is added to the Notion `Категория` select only after the user confirms it in Telegram; never create categories silently.
 - Category matching is case-insensitive and must reject aliases or near-duplicates of an existing category.
@@ -32,6 +35,8 @@ This is the living rules file for the budget app. We update it when decisions be
 - AI parsing must return structured data and must never write directly to Notion.
 - A parsed transaction requires user confirmation before it is saved.
 - Currency conversion and report totals are calculated by application code, not by the language model.
+- Currency conversion uses Frankfurter v2 without an API key and targets EUR. EUR-to-EUR uses rate `1` without a network request.
+- Request the rate for the transaction date. Accept the API's same-day rate or the latest returned prior rate, but never a rate after the transaction date.
 - Send only the current transaction text and controlled category/account lists to the language model, not the complete budget history.
 - Timezone defaults to `Asia/Ho_Chi_Minh` unless explicitly changed.
 - The MVP uses the transaction date to request the historical rate and stores the applied rate; it does not expose a separate rate-date property in Notion.
@@ -70,7 +75,19 @@ This is the living rules file for the budget app. We update it when decisions be
 
 ## Open Decisions
 
-- Category taxonomy and account list supplied to the AI parser.
-- Notion database properties and views.
-- Currency handling and exchange-rate policy.
+- Whether transfers between personal accounts are included in the MVP.
+- Whether raw Telegram input is retained for audit or discarded after confirmation.
+- The 10 representative Telegram messages used to verify AI parsing.
+- Remaining Notion views and the first idempotent repository write.
+- OpenAI API billing/key setup and live parser verification.
+
+## Session Handoff — 2026-07-18
+
+- GitHub and Vercel are connected, and the latest production deployment was previously verified as `Ready`.
+- Telegram and Notion credentials are configured locally and as encrypted Vercel Production/Development variables. Preview variables are not configured yet.
+- Notion `Категория` contains `Фриланс`, `Работа`, and `Спорт`; `Транспорт` remains the category for both fuel and bike rental.
+- The text parser maps employment income to `Работа`, freelance income to `Фриланс`, gym/fitness/pickleball to `Спорт`, and fuel/bike rental to `Транспорт` while retaining the specific purpose in the comment.
+- Frankfurter v2 conversion to EUR is implemented and tested for EUR, VND, USD, and a prior-date fallback. It needs no API key.
+- OpenAI text parsing is implemented but cannot be tested live until `OPENAI_API_KEY` is added locally and in Vercel. A ChatGPT subscription is not an API credential.
+- Continue strictly from `Current Next Actions` in `docs/checklist.md`.
 - Raw Telegram text retention policy.

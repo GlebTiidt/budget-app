@@ -101,12 +101,14 @@ function buildInstructions(options: OpenAiTransactionParserOptions, now: Date): 
   return [
     "Extract exactly one personal budget transaction from informal Telegram text.",
     "Normalize the merchant or purpose into a short description; do not copy the whole message.",
+    "Keep useful transaction details in note, including what was bought, fuel, or bike rental details.",
     "Do not invent an amount, currency, date, account, or category.",
     "Interpret k/к/тыс after an amount as one thousand when context supports it.",
     "Use ISO 4217 three-letter currency codes.",
     `Current timestamp: ${now.toISOString()}. User timezone: ${options.timezone}.`,
     "Resolve relative dates such as today, yesterday, or позавчера using that timezone.",
     categoryRule,
+    "Category rules: salary or regular employment income is Работа; freelance income is Фриланс; gym, fitness, and pickleball are Спорт; fuel and bike rental are Транспорт, while the specific purpose remains in description or note.",
     accountRule,
     "List every material uncertainty in ambiguities and reduce confidence accordingly.",
     "The application will ask the user to confirm before saving."

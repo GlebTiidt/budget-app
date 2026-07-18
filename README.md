@@ -7,6 +7,8 @@ Personal budget app that will start as a Telegram bot and use Notion for account
 - `src/budget` contains budget domain logic: transactions, categories, accounts, rules.
 - `src/integrations/telegram` contains Telegram bot entrypoints and command handlers.
 - `src/integrations/notion` contains Notion client and page/database mapping code.
+- `src/integrations/openai` contains structured text parsing; it never writes directly to Notion.
+- `src/integrations/currency` contains deterministic Frankfurter-to-EUR conversion.
 - `src/storage` contains persistence adapters.
 - `src/config` contains environment parsing and app settings.
 - `docs/rules.md` is the living development rules file.
@@ -31,6 +33,6 @@ npm install
 npm run dev
 ```
 
-The project currently contains scaffolding only. Dependencies will be added when we implement the first working bot flow.
+The project has verified configuration, structured parsing, chart rendering, and currency-conversion building blocks. The end-to-end Telegram confirmation and Notion write flow is the next implementation milestone.
 
 Keep `TELEGRAM_BOT_TOKEN`, `NOTION_API_KEY`, and `OPENAI_API_KEY` in `.env.local` locally and in Vercel environment variables in production. Never commit or paste those values into issues or chat messages.

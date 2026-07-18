@@ -4,7 +4,7 @@
 
 - `app`: process entrypoint and composition root.
 - `budget`: core domain types and rules.
-- `integrations`: external APIs such as Telegram and Notion.
+- `integrations`: external APIs such as Telegram, Notion, OpenAI, and Frankfurter.
 - `reports`: deterministic report datasets and chart rendering.
 - `storage`: persistence abstractions and adapters.
 - `config`: environment-backed settings.
@@ -23,6 +23,8 @@ Telegram text -> OpenAI structured draft -> user confirmation -> validation -> c
 ```
 
 Reports query already converted EUR values from Notion. The application aggregates totals itself and uses QuickChart only to render a PNG; the language model is never used for arithmetic.
+
+Frankfurter v2 provides the historical rate without a project API key. The converter sends the transaction date, converts into EUR in application code, uses rate `1` for EUR, and rejects a returned rate dated after the transaction.
 
 ## Future Client and Voice Path
 

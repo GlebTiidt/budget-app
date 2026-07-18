@@ -26,17 +26,18 @@ This file is the single source of truth for project progress. A checked item mus
 - [x] Configure a valid Vercel output directory and verify a production deployment with status `Ready`.
 - [x] Register Telegram bot `@budgetgleb_bot`.
 - [x] Add `TELEGRAM_BOT_TOKEN` to `.env.local` without posting it in chat; verify it with Telegram `getMe`.
-- [ ] Add `TELEGRAM_BOT_TOKEN` to Vercel environment variables.
+- [x] Add `TELEGRAM_BOT_TOKEN` to Vercel Production and Development environment variables.
 - [x] Determine the owner's numeric Telegram user ID (`742932409`) and add it to local `TELEGRAM_ALLOWED_USER_IDS`.
-- [ ] Add `TELEGRAM_ALLOWED_USER_IDS` to Vercel environment variables.
+- [x] Add `TELEGRAM_ALLOWED_USER_IDS` to Vercel Production and Development environment variables.
 
 Exit condition: the bot token and owner allowlist are configured in both environments without any secret entering Git.
 
 ## Phase 1 — Personal Accounting Rules
 
 - [x] Confirm the initial currencies: `USD`, `RUB`, `VND`, `AUD`, and `EUR`.
-- [x] Confirm the initial expense categories: `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, `Другое`, `Кофешоп`, and `Еда вне дома`.
-- [ ] Confirm income categories.
+- [x] Confirm the initial expense categories: `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, `Другое`, `Кофешоп`, `Еда вне дома`, and `Спорт`.
+- [x] Confirm income categories: `Фриланс` and `Работа`.
+- [x] Treat fuel and bike rental as `Транспорт`; preserve `Бензин` and `Аренда байка` in the comment instead of creating categories.
 - [x] Confirm the initial accounts: `Наличные`, `Карта`, and `Сбережения`.
 - [ ] Decide whether transfers between personal accounts are included in the first version.
 - [ ] Provide 10 representative Telegram transaction messages, including slang and abbreviations.
@@ -52,7 +53,8 @@ Exit condition: currencies, categories, accounts, transfer policy, examples, and
 - [x] Create a private Notion integration with read, insert, and update content access; verify its token with Notion `users/me`.
 - [x] Share the `Личный бюджет` page and nested `Транзакции` database with that integration; verify read access.
 - [x] Add local `NOTION_API_KEY`, `NOTION_BUDGET_DATABASE_ID`, and `NOTION_BUDGET_DATA_SOURCE_ID` values and verify them.
-- [ ] Add `NOTION_API_KEY`, `NOTION_BUDGET_DATABASE_ID`, and `NOTION_BUDGET_DATA_SOURCE_ID` to Vercel.
+- [x] Add `NOTION_API_KEY`, `NOTION_BUDGET_DATABASE_ID`, and `NOTION_BUDGET_DATA_SOURCE_ID` to Vercel Production and Development.
+- [x] Synchronize Notion categories `Фриланс`, `Работа`, and `Спорт`; keep fuel and bike rental under `Транспорт`.
 - [ ] Implement the Notion transaction mapper and repository.
 - [ ] Verify an idempotent test write and delete the test row manually.
 
@@ -76,12 +78,12 @@ Exit condition: every sample produces a valid draft or a clear clarification req
 
 ## Phase 4 — Currency Conversion
 
-- [ ] Implement the Frankfurter client without an API key.
-- [ ] Convert from the original currency to EUR using the transaction date.
-- [ ] Use rate `1` for EUR transactions.
-- [ ] Define weekend/holiday behavior using the latest available prior rate.
-- [ ] Store original amount, currency, transaction date, applied rate, and EUR amount.
-- [ ] Add tests for EUR, USD, VND or another daily currency, and a non-trading day.
+- [x] Implement the Frankfurter v2 client without an API key.
+- [x] Convert from the original currency to EUR using the transaction date.
+- [x] Use rate `1` for EUR transactions.
+- [x] Define weekend/holiday behavior: accept the same-day rate when provided, otherwise the latest available prior rate; reject future rates.
+- [x] Return original amount, currency, transaction date, applied rate, rate date, and EUR amount for the Notion mapper.
+- [x] Add tests for EUR, USD, VND, and a non-trading day.
 
 Exit condition: tested conversions are deterministic and retain all audit fields.
 
@@ -157,8 +159,8 @@ Exit condition: voice capture is private, measurable, and every extracted transa
 
 ## Current Next Actions
 
-1. Add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_USER_IDS` to Vercel.
-2. Decide income categories, transfer handling, and raw-text retention; supply 10 representative Telegram messages.
-3. Create the remaining Notion views, configure Notion values in Vercel, and implement the first verified repository write.
-4. Create and add the OpenAI API key, then test structured parsing before wiring the full Telegram flow.
+1. Decide transfer handling and raw-text retention; supply 10 representative Telegram messages.
+2. Create the remaining Notion views and implement the first verified repository write.
+3. Create and add the OpenAI API key, then test structured parsing before wiring the full Telegram flow.
+4. Wire the tested EUR converter into the confirmed Telegram transaction flow.
 5. Keep Phases 8–9 parked until the Telegram MVP completes its production smoke test.
