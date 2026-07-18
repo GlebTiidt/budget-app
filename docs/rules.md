@@ -21,7 +21,7 @@ This is the living rules file for the budget app. We update it when decisions be
 - Every transaction must have amount, currency, direction, date, and source.
 - Direction is either `expense`, `income`, or `transfer`.
 - Categories should be normalized before saving to Notion.
-- The current category list is `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, and `Другое`.
+- The current category list is `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, `Другое`, `Кофешоп`, and `Еда вне дома`.
 - AI must prefer an existing category. If none fits, it may suggest one normalized new category.
 - A new category is added to the Notion `Категория` select only after the user confirms it in Telegram; never create categories silently.
 - Category matching is case-insensitive and must reject aliases or near-duplicates of an existing category.

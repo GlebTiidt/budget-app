@@ -31,7 +31,7 @@ Exit condition: the bot token and owner allowlist are configured in both environ
 ## Phase 1 — Personal Accounting Rules
 
 - [x] Confirm the initial currencies: `USD`, `RUB`, `VND`, `AUD`, and `EUR`.
-- [x] Confirm the initial expense categories: `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, and `Другое`.
+- [x] Confirm the initial expense categories: `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, `Другое`, `Кофешоп`, and `Еда вне дома`.
 - [ ] Confirm income categories.
 - [x] Confirm the initial accounts: `Наличные`, `Карта`, and `Сбережения`.
 - [ ] Decide whether transfers between personal accounts are included in the first version.
