@@ -13,6 +13,9 @@ This file is the single source of truth for project progress. A checked item mus
 - [x] Informal text is normalized by OpenAI before it reaches Notion.
 - [x] AI-parsed transactions require confirmation before saving.
 - [x] Monthly reports include category totals and a doughnut/pie chart.
+- [x] Telegram remains the MVP client; a native iOS app is a later client of the same budget backend.
+- [x] The future iOS client will be built in Xcode with SwiftUI and its own design system.
+- [x] Voice input is a future feature, with on-device Apple transcription preferred when available.
 
 ## Phase 0 — Accounts and Infrastructure
 
@@ -124,8 +127,38 @@ Exit condition: the bot returns verified monthly totals and a chart whose segmen
 
 Exit condition: the production bot passes the smoke test and can be safely operated and recovered.
 
+## Phase 8 — Native iOS Client (Future)
+
+- [ ] Choose the minimum supported iOS version after reviewing current device requirements.
+- [ ] Create a separate Xcode/SwiftUI app target without moving backend domain logic into the client.
+- [ ] Define the visual language, design tokens, navigation, transaction composer, confirmation sheet, history, and reports.
+- [ ] Add a private authenticated API surface on Vercel for the iOS client.
+- [ ] Keep Telegram, Notion, OpenAI, and currency-provider secrets on the server; never embed them in the app bundle.
+- [ ] Implement text transaction entry using the same backend validation and confirmation rules as Telegram.
+- [ ] Implement monthly history and chart views using server-provided normalized data.
+- [ ] Add Keychain-backed client credentials and secure session handling.
+- [ ] Add iOS unit, UI, accessibility, and offline/error-state tests.
+
+Exit condition: the iOS app can safely create and review the same transactions as Telegram without containing server secrets.
+
+## Phase 9 — Voice and Multi-Transaction Capture (Future)
+
+- [ ] Prototype Apple Speech/SpeechAnalyzer transcription and confirm supported Russian and English behavior on the target devices.
+- [ ] Prefer on-device transcription when supported; use `gpt-4o-mini-transcribe` only as an accuracy or compatibility fallback.
+- [ ] Add microphone and speech-recognition permission descriptions and request access only when the user starts voice input.
+- [ ] Support both one-operation dictation and a daily note containing multiple operations.
+- [ ] Parse a daily note into an array of independent structured drafts.
+- [ ] Require per-operation review, correction, and confirmation before saving the daily batch.
+- [ ] Delete raw audio after successful transcription by default; retain it only through an explicit opt-in.
+- [ ] Record transcription duration and OpenAI usage without logging audio or sensitive text.
+- [ ] Compare measured cost and accuracy of immediate entries versus one daily note before choosing a default.
+
+Exit condition: voice capture is private, measurable, and every extracted transaction is individually reviewable before saving.
+
 ## Current Next Actions
 
-1. Complete the remaining Phase 0 secret and Telegram user-ID setup.
-2. Supply the Phase 1 lists, examples, transfer policy, and raw-text preference.
-3. Create the Phase 2 Notion database and private integration.
+1. Add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_USER_IDS` to Vercel.
+2. Decide income categories, transfer handling, and raw-text retention; supply 10 representative Telegram messages.
+3. Create the remaining Notion views, configure Notion values in Vercel, and implement the first verified repository write.
+4. Create and add the OpenAI API key, then test structured parsing before wiring the full Telegram flow.
+5. Keep Phases 8–9 parked until the Telegram MVP completes its production smoke test.

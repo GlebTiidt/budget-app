@@ -15,6 +15,8 @@ This is the living rules file for the budget app. We update it when decisions be
 - Telegram is the first interface for testing and daily input.
 - Notion is the first accounting backend and should remain human-readable.
 - Avoid overbuilding until a real workflow proves the need.
+- Finish and validate the Telegram workflow before starting the native iOS implementation.
+- Treat Telegram and the future SwiftUI app as clients of one server-side budget domain, not as separate accounting systems.
 
 ## Data Rules
 
@@ -60,6 +62,11 @@ This is the living rules file for the budget app. We update it when decisions be
 - Add tests around parsing, categorization, and duplicate prevention before expanding behavior.
 - Keep secrets out of git. Use `.env.local` for local credentials.
 - Store production secrets in Vercel environment variables.
+- Never ship Telegram, Notion, OpenAI, Vercel, or currency-provider secrets inside an iOS application bundle.
+- Prefer Apple on-device speech recognition for the future iOS client when the target locale and device support it.
+- Raw voice recordings are deleted after transcription by default and are never written to logs.
+- A daily voice note may create multiple drafts, but every draft requires independent validation and confirmation.
+- Optimize cost by shortening repeated prompts, using structured outputs, and measuring actual usage; do not sacrifice transaction correctness merely to reduce token count.
 
 ## Open Decisions
 

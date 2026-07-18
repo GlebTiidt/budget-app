@@ -8,6 +8,7 @@
 - `reports`: deterministic report datasets and chart rendering.
 - `storage`: persistence abstractions and adapters.
 - `config`: environment-backed settings.
+- `clients`: Telegram is the MVP client; a future SwiftUI app calls the same server-side application boundary.
 
 ## Dependency Direction
 
@@ -22,3 +23,19 @@ Telegram text -> OpenAI structured draft -> user confirmation -> validation -> c
 ```
 
 Reports query already converted EUR values from Notion. The application aggregates totals itself and uses QuickChart only to render a PNG; the language model is never used for arithmetic.
+
+## Future Client and Voice Path
+
+```text
+iOS microphone -> Apple on-device transcription (preferred) -> text
+                                                        |
+                                                        v
+                                      server-side structured parser
+                                                        |
+Telegram text ------------------------------------------+
+                                                        |
+                                                        v
+                              confirmation -> conversion -> Notion
+```
+
+If on-device recognition is unavailable or insufficient, the iOS client uploads only the captured clip to a server-side transcription endpoint. API keys remain on Vercel. A daily note is parsed into multiple drafts, but each draft follows the same confirmation and validation path as an immediate transaction.
