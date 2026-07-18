@@ -20,6 +20,7 @@ This file is the single source of truth for project progress. A checked item mus
 - [x] Create and connect `GlebTiidt/budget-app` on GitHub.
 - [x] Create `gleb-projects-work/budget-app` on Vercel.
 - [x] Connect the Vercel project to the GitHub repository.
+- [x] Configure a valid Vercel output directory and verify a production deployment with status `Ready`.
 - [x] Register Telegram bot `@budgetgleb_bot`.
 - [x] Add `TELEGRAM_BOT_TOKEN` to `.env.local` without posting it in chat; verify it with Telegram `getMe`.
 - [ ] Add `TELEGRAM_BOT_TOKEN` to Vercel environment variables.
