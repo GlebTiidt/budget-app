@@ -23,7 +23,8 @@ This file is the single source of truth for project progress. A checked item mus
 - [x] Register Telegram bot `@budgetgleb_bot`.
 - [x] Add `TELEGRAM_BOT_TOKEN` to `.env.local` without posting it in chat; verify it with Telegram `getMe`.
 - [ ] Add `TELEGRAM_BOT_TOKEN` to Vercel environment variables.
-- [ ] Determine the owner's numeric Telegram user ID and add it to `TELEGRAM_ALLOWED_USER_IDS` locally and in Vercel.
+- [x] Determine the owner's numeric Telegram user ID (`742932409`) and add it to local `TELEGRAM_ALLOWED_USER_IDS`.
+- [ ] Add `TELEGRAM_ALLOWED_USER_IDS` to Vercel environment variables.
 
 Exit condition: the bot token and owner allowlist are configured in both environments without any secret entering Git.
 
