@@ -6,7 +6,9 @@ async function main(): Promise<void> {
   console.log("Budget app scaffold ready", {
     timezone: config.timezone,
     telegramConfigured: Boolean(config.telegramBotToken),
-    notionConfigured: Boolean(config.notionApiKey && config.notionBudgetDatabaseId)
+    notionConfigured: Boolean(config.notionApiKey && config.notionBudgetDatabaseId),
+    openaiConfigured: Boolean(config.openaiApiKey),
+    openaiModel: config.openaiModel
   });
 }
 

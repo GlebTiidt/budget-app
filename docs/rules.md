@@ -2,6 +2,13 @@
 
 This is the living rules file for the budget app. We update it when decisions become stable.
 
+## Delivery Workflow
+
+- `docs/checklist.md` is the single source of truth for delivery status.
+- Work in checklist order and update it in the same change that completes a milestone.
+- Do not mark scaffolding, configuration placeholders, or unverified external integrations as complete.
+- A required item may be skipped only when it is explicitly marked blocked with a reason.
+
 ## Product Principles
 
 - The app is personal-first: optimize for speed, low friction, and clear personal accounting.
@@ -14,7 +21,11 @@ This is the living rules file for the budget app. We update it when decisions be
 - Every transaction must have amount, currency, direction, date, and source.
 - Direction is either `expense`, `income`, or `transfer`.
 - Categories should be normalized before saving to Notion.
-- Raw user input should be preserved when practical, so parsing mistakes can be reviewed.
+- Save the normalized description to Notion. Store raw Telegram text only if the user explicitly enables it for audit.
+- AI parsing must return structured data and must never write directly to Notion.
+- A parsed transaction requires user confirmation before it is saved.
+- Currency conversion and report totals are calculated by application code, not by the language model.
+- Send only the current transaction text and controlled category/account lists to the language model, not the complete budget history.
 - Timezone defaults to `Asia/Ho_Chi_Minh` unless explicitly changed.
 
 ## Telegram Rules
@@ -38,11 +49,11 @@ This is the living rules file for the budget app. We update it when decisions be
 - Config must be read through `src/config`, not directly from `process.env` across the app.
 - Add tests around parsing, categorization, and duplicate prevention before expanding behavior.
 - Keep secrets out of git. Use `.env.local` for local credentials.
+- Store production secrets in Vercel environment variables.
 
 ## Open Decisions
 
-- Exact Telegram message format for transactions.
+- Category taxonomy and account list supplied to the AI parser.
 - Notion database properties and views.
 - Currency handling and exchange-rate policy.
-- Category taxonomy.
-- Deployment target.
+- Raw Telegram text retention policy.
