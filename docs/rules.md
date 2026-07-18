@@ -21,6 +21,11 @@ This is the living rules file for the budget app. We update it when decisions be
 - Every transaction must have amount, currency, direction, date, and source.
 - Direction is either `expense`, `income`, or `transfer`.
 - Categories should be normalized before saving to Notion.
+- The current category list is `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, and `Другое`.
+- AI must prefer an existing category. If none fits, it may suggest one normalized new category.
+- A new category is added to the Notion `Категория` select only after the user confirms it in Telegram; never create categories silently.
+- Category matching is case-insensitive and must reject aliases or near-duplicates of an existing category.
+- When updating Notion select options, preserve every existing option and append the confirmed new option because omitted options may be removed by the API.
 - Save the normalized description to Notion. Store raw Telegram text only if the user explicitly enables it for audit.
 - AI parsing must return structured data and must never write directly to Notion.
 - A parsed transaction requires user confirmation before it is saved.
@@ -30,6 +35,8 @@ This is the living rules file for the budget app. We update it when decisions be
 - The MVP uses the transaction date to request the historical rate and stores the applied rate; it does not expose a separate rate-date property in Notion.
 - The MVP does not store a `Source` property because Telegram is the only input source.
 - The MVP relies on Notion's built-in page creation metadata instead of a visible `Created` property.
+- The current account list is `Наличные`, `Карта`, and `Сбережения`.
+- The current currency list is `USD`, `RUB`, `VND`, `AUD`, and `EUR`.
 
 ## Telegram Rules
 

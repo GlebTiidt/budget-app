@@ -30,10 +30,10 @@ Exit condition: the bot token and owner allowlist are configured in both environ
 
 ## Phase 1 — Personal Accounting Rules
 
-- [ ] Confirm the currencies used in daily life.
-- [ ] Confirm expense categories.
+- [x] Confirm the initial currencies: `USD`, `RUB`, `VND`, `AUD`, and `EUR`.
+- [x] Confirm the initial expense categories: `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, and `Другое`.
 - [ ] Confirm income categories.
-- [ ] Confirm accounts, such as cards and cash wallets.
+- [x] Confirm the initial accounts: `Наличные`, `Карта`, and `Сбережения`.
 - [ ] Decide whether transfers between personal accounts are included in the first version.
 - [ ] Provide 10 representative Telegram transaction messages, including slang and abbreviations.
 - [ ] Decide whether raw Telegram text is stored privately for audit or discarded after confirmation.
@@ -65,6 +65,8 @@ Exit condition: one verified transaction can be written exactly once through the
 - [ ] Test the parser against the 10 representative messages.
 - [ ] Add deterministic fallback/error messages for incomplete or ambiguous input.
 - [ ] Implement Confirm, Correct, and Cancel actions in Telegram.
+- [ ] Implement a proposed-new-category state with Create, Use `Другое`, and Cancel actions.
+- [ ] Append a confirmed category to Notion while preserving all existing select options and rejecting duplicates.
 
 Exit condition: every sample produces a valid draft or a clear clarification request, and nothing is saved before confirmation.
 
