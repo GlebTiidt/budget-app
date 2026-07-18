@@ -27,6 +27,9 @@ This is the living rules file for the budget app. We update it when decisions be
 - Currency conversion and report totals are calculated by application code, not by the language model.
 - Send only the current transaction text and controlled category/account lists to the language model, not the complete budget history.
 - Timezone defaults to `Asia/Ho_Chi_Minh` unless explicitly changed.
+- The MVP uses the transaction date to request the historical rate and stores the applied rate; it does not expose a separate rate-date property in Notion.
+- The MVP does not store a `Source` property because Telegram is the only input source.
+- The MVP relies on Notion's built-in page creation metadata instead of a visible `Created` property.
 
 ## Telegram Rules
 

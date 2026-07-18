@@ -43,7 +43,7 @@ Exit condition: currencies, categories, accounts, transfer policy, examples, and
 ## Phase 2 — Notion Ledger
 
 - [x] Create the `Транзакции` database in Notion and verify API access.
-- [ ] Add the agreed schema: title, date, direction, original amount, original currency, EUR rate, EUR amount, category, account, note, Telegram message ID, and created time.
+- [x] Add and verify the MVP schema: `Операция`, `Дата`, `Тип`, `Исходная сумма`, `Валюта`, `Курс к EUR`, `Сумма EUR`, `Категория`, `Счёт`, `Комментарий`, and `Telegram ID`.
 - [ ] Create month, category, income, and expense views.
 - [x] Create a private Notion integration with read, insert, and update content access; verify its token with Notion `users/me`.
 - [x] Share the `Личный бюджет` page and nested `Транзакции` database with that integration; verify read access.
@@ -74,7 +74,7 @@ Exit condition: every sample produces a valid draft or a clear clarification req
 - [ ] Convert from the original currency to EUR using the transaction date.
 - [ ] Use rate `1` for EUR transactions.
 - [ ] Define weekend/holiday behavior using the latest available prior rate.
-- [ ] Store original amount, currency, rate date, applied rate, and EUR amount.
+- [ ] Store original amount, currency, transaction date, applied rate, and EUR amount.
 - [ ] Add tests for EUR, USD, VND or another daily currency, and a non-trading day.
 
 Exit condition: tested conversions are deterministic and retain all audit fields.
