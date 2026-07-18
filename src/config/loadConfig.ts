@@ -3,6 +3,7 @@ export type AppConfig = {
   telegramAllowedUserIds: string[];
   notionApiKey: string | undefined;
   notionBudgetDatabaseId: string | undefined;
+  notionBudgetDataSourceId: string | undefined;
   openaiApiKey: string | undefined;
   openaiModel: string;
   quickChartBaseUrl: string;
@@ -15,6 +16,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     telegramAllowedUserIds: splitCsv(env.TELEGRAM_ALLOWED_USER_IDS),
     notionApiKey: emptyToUndefined(env.NOTION_API_KEY),
     notionBudgetDatabaseId: emptyToUndefined(env.NOTION_BUDGET_DATABASE_ID),
+    notionBudgetDataSourceId: emptyToUndefined(env.NOTION_BUDGET_DATA_SOURCE_ID),
     openaiApiKey: emptyToUndefined(env.OPENAI_API_KEY),
     openaiModel: emptyToUndefined(env.OPENAI_MODEL) ?? "gpt-5.6-luna",
     quickChartBaseUrl:

@@ -42,12 +42,13 @@ Exit condition: currencies, categories, accounts, transfer policy, examples, and
 
 ## Phase 2 — Notion Ledger
 
-- [ ] Create the `Транзакции` database in Notion.
+- [x] Create the `Транзакции` database in Notion and verify API access.
 - [ ] Add the agreed schema: title, date, direction, original amount, original currency, EUR rate, EUR amount, category, account, note, Telegram message ID, and created time.
 - [ ] Create month, category, income, and expense views.
 - [x] Create a private Notion integration with read, insert, and update content access; verify its token with Notion `users/me`.
-- [ ] Share only the budget page/database with that integration.
-- [ ] Add `NOTION_API_KEY` and `NOTION_BUDGET_DATABASE_ID` locally and in Vercel.
+- [x] Share the `Личный бюджет` page and nested `Транзакции` database with that integration; verify read access.
+- [x] Add local `NOTION_API_KEY`, `NOTION_BUDGET_DATABASE_ID`, and `NOTION_BUDGET_DATA_SOURCE_ID` values and verify them.
+- [ ] Add `NOTION_API_KEY`, `NOTION_BUDGET_DATABASE_ID`, and `NOTION_BUDGET_DATA_SOURCE_ID` to Vercel.
 - [ ] Implement the Notion transaction mapper and repository.
 - [ ] Verify an idempotent test write and delete the test row manually.
 
