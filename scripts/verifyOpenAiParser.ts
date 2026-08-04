@@ -28,28 +28,28 @@ const fixedNow = new Date("2026-08-04T07:45:00.000Z");
 
 const verificationCases: VerificationCase[] = [
   {
-    name: "owner complex message: advance, four expenses, current balance",
+    name: "complex message: advance, four expenses, current balance",
     input:
-      "У меня вчера было 177$ американских, которые я перевел в донги. Сегодня у меня осталось 20к донгов. Я заказал визаран в Камбоджу за 2250000 донгов, плюс сделал визу в Камбоджу за 30$. купил билет до сайгона за 500к донгов и сегодня оплатил API Open AI за 11$. Нужно запомнить разницу и остальное положить в расходы и доходы. Денег я взял в долг с зарплаты. То есть можно учесть, что это ЗП из компании где я работаю",
+      "Вчера у меня было 240 USD, которые я обменял на донги. Сегодня осталось 30к донгов. Оплатил поездку за 1800000 донгов, визу за 25 USD, купил билет за 420к донгов и оплатил рабочий сервис за 9 USD. Эти 240 USD я получил как аванс от работодателя.",
     expectedDirections: { income: 1, expense: 4, transfer: 0 },
     expectedBalanceObservations: 1,
     expectedTransactions: [
-      { amount: 177, currency: "USD", direction: "income", category: "Работа" },
-      { amount: 2_250_000, currency: "VND", direction: "expense" },
-      { amount: 30, currency: "USD", direction: "expense" },
-      { amount: 500_000, currency: "VND", direction: "expense" },
-      { amount: 11, currency: "USD", direction: "expense" }
+      { amount: 240, currency: "USD", direction: "income", category: "Работа" },
+      { amount: 1_800_000, currency: "VND", direction: "expense" },
+      { amount: 25, currency: "USD", direction: "expense" },
+      { amount: 420_000, currency: "VND", direction: "expense" },
+      { amount: 9, currency: "USD", direction: "expense" }
     ]
   },
   {
-    name: "owner correction message: incomplete advance and fuel",
+    name: "incomplete advance and fuel",
     input:
-      "Это аванс. Несколько расходов раскидай по разным категориям, если нужно. Еще я заправился сегодня на 50к донгов. Сумму на сегодняшний день возьми, или у нас этого модуля пока что нет?",
+      "Отдельно: это аванс от работодателя, сумму не помню. Ещё сегодня заправился на 60к донгов.",
     expectedDirections: { income: 1, expense: 1, transfer: 0 },
     expectedBalanceObservations: 0,
     expectedTransactions: [
       { amount: null, currency: null, direction: "income", category: "Работа" },
-      { amount: 50_000, currency: "VND", direction: "expense", category: "Транспорт" }
+      { amount: 60_000, currency: "VND", direction: "expense", category: "Транспорт" }
     ]
   },
   {

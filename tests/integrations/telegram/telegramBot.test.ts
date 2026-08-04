@@ -14,9 +14,9 @@ import {
 } from "../../../src/integrations/telegram/telegramBot.js";
 
 test("allows only configured Telegram users", () => {
-  assert.equal(isTelegramUserAllowed(742932409, ["742932409"]), true);
-  assert.equal(isTelegramUserAllowed(123, ["742932409"]), false);
-  assert.equal(isTelegramUserAllowed(undefined, ["742932409"]), false);
+  assert.equal(isTelegramUserAllowed(100001, ["100001"]), true);
+  assert.equal(isTelegramUserAllowed(123, ["100001"]), false);
+  assert.equal(isTelegramUserAllowed(undefined, ["100001"]), false);
 });
 
 test("formats a safe preview without claiming a Notion write", () => {
@@ -145,7 +145,7 @@ test("Telegram sends a summary and an independently actionable preview for every
   };
   const config = loadConfig({
     TELEGRAM_BOT_TOKEN: "123456:test-token",
-    TELEGRAM_ALLOWED_USER_IDS: "742932409"
+    TELEGRAM_ALLOWED_USER_IDS: "100001"
   });
   const bot = createTelegramPreviewBot(config, { parser });
   const sentMessages: Array<Record<string, unknown>> = [];
@@ -177,7 +177,7 @@ test("Telegram sends a summary and an independently actionable preview for every
           result: {
             message_id: sentMessages.length,
             date: 1_775_290_700,
-            chat: { id: 742932409, type: "private", first_name: "Owner" },
+            chat: { id: 100001, type: "private", first_name: "Owner" },
             text: payload.text
           }
         };
@@ -193,9 +193,9 @@ test("Telegram sends a summary and an independently actionable preview for every
     message: {
       message_id: 10,
       date: 1_775_290_700,
-      chat: { id: 742932409, type: "private", first_name: "Owner" },
+      chat: { id: 100001, type: "private", first_name: "Owner" },
       from: {
-        id: 742932409,
+        id: 100001,
         is_bot: false,
         first_name: "Owner"
       },

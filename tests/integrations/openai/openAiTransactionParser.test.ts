@@ -6,35 +6,35 @@ test("normalizes a multi-transaction message without merging its operations", ()
   const parsed = normalizeParsedBudgetMessage({
     transactions: [
       transaction({
-        amount: 177,
+        amount: 240,
         currency: "usd",
         direction: "income",
         category: " Работа ",
         description: " Аванс "
       }),
       transaction({
-        amount: 2_250_000,
+        amount: 1_800_000,
         currency: "vnd",
         direction: "expense",
         category: "Покупки",
         description: "Визаран"
       }),
       transaction({
-        amount: 30,
+        amount: 25,
         currency: "usd",
         direction: "expense",
         category: "Другое",
         description: "Виза"
       }),
       transaction({
-        amount: 500_000,
+        amount: 420_000,
         currency: "vnd",
         direction: "expense",
         category: "Транспорт",
         description: "Билет"
       }),
       transaction({
-        amount: 11,
+        amount: 9,
         currency: "usd",
         direction: "expense",
         category: "Подписки",
@@ -62,11 +62,11 @@ test("normalizes a multi-transaction message without merging its operations", ()
       currency
     })),
     [
-      { direction: "income", amount: 177, currency: "USD" },
-      { direction: "expense", amount: 2_250_000, currency: "VND" },
-      { direction: "expense", amount: 30, currency: "USD" },
-      { direction: "expense", amount: 500_000, currency: "VND" },
-      { direction: "expense", amount: 11, currency: "USD" }
+      { direction: "income", amount: 240, currency: "USD" },
+      { direction: "expense", amount: 1_800_000, currency: "VND" },
+      { direction: "expense", amount: 25, currency: "USD" },
+      { direction: "expense", amount: 420_000, currency: "VND" },
+      { direction: "expense", amount: 9, currency: "USD" }
     ]
   );
   assert.equal(parsed.transactions[0]?.category, "Работа");

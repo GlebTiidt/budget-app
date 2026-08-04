@@ -161,7 +161,7 @@ function buildInstructions(options: OpenAiTransactionParserOptions, now: Date): 
     "Extract every distinct personal budget transaction from the current Telegram message, not only the first one.",
     "Read the entire message before finalizing items. Later clauses may explain the source, type, date, or purpose of an amount mentioned earlier.",
     "Resolve references such as эти деньги, денег я взял, это аванс, or можно учесть как зарплату to the nearest compatible amount already stated in the same message. Attach that amount to the clarified transaction instead of creating a duplicate incomplete item.",
-    "Example: if the user had 177 USD, exchanged it to VND, and later says those funds were a salary advance, return one 177 USD income in category Работа; do not return the exchange or a second amount-less advance.",
+    "Example: if the user had 240 USD, exchanged it to VND, and later says those funds were a salary advance, return one 240 USD income in category Работа; do not return the exchange or a second amount-less advance.",
     "Keep transactions in the same order in which the message mentions them.",
     "Create a separate transaction for every distinct received, earned, paid, bought, ordered, or spent amount.",
     "A salary advance or advance from the user's employer is income in category Работа.",

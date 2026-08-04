@@ -21,7 +21,7 @@ This is the living rules file for the budget app. We update it when decisions be
 
 ## Data Rules
 
-- Every transaction must have amount, currency, direction, date, and source.
+- Every transaction must have direction and date. Amount and currency may be missing only in an incomplete draft and are required before saving.
 - Direction is either `expense`, `income`, or `transfer`.
 - Categories should be normalized before saving to Notion.
 - The current expense category list is `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, `Другое`, `Кофешоп`, `Еда вне дома`, and `Спорт`.
@@ -37,7 +37,7 @@ This is the living rules file for the budget app. We update it when decisions be
 - Currency conversion and report totals are calculated by application code, not by the language model.
 - The opening balance is a controlled EUR setting with an effective date; it is not recorded as a fake income transaction.
 - The personal MVP tracks one total EUR balance rather than separate per-account balances.
-- Transfers between personal accounts are excluded from the first version.
+- The parser may recognize transfers for clarification, but saving transfers between personal accounts is excluded from the first version.
 - Every confirmed transaction stores `Остаток EUR`, the running balance immediately after that operation.
 - For the total balance, income adds the converted EUR amount, expense subtracts it, and transfers between personal accounts do not change it.
 - Backdated inserts, corrections, and deletions require recalculation of every later running balance in deterministic date/order sequence.
@@ -71,8 +71,8 @@ This is the living rules file for the budget app. We update it when decisions be
 - The deployed preview is owner-only and exists to test Telegram delivery, language, parsing quality, and draft controls before enabling financial writes.
 - Every preview draft and callback response must state that nothing was written to Notion.
 - `Верно`, `Исправить`, and `Отмена` exercise preview UX only; they must not call currency conversion or any repository write.
-- Preview testing must use synthetic or low-sensitivity examples and must never include credentials, API keys, or unrelated private data.
-- Application logs must not contain raw Telegram transaction text. Test feedback may record the exact test phrase only when the owner intentionally provides it for the 10-message verification set.
+- Committed tests and fixtures must use synthetic examples and must never contain credentials, API keys, personal identifiers, or real financial history.
+- Application logs must not contain raw Telegram transaction text. An exact user phrase may be used transiently for debugging only and must be removed after a synthetic regression case reproduces it.
 - Do not mark the full Telegram transaction flow complete until one real Telegram message passes confirmation, conversion, an idempotent Notion write, and a verified receipt.
 
 ## Notion Rules
@@ -106,28 +106,3 @@ This is the living rules file for the budget app. We update it when decisions be
 - A multi-operation Telegram text creates multiple drafts, and every draft requires independent validation and confirmation.
 - A daily voice note may create multiple drafts, but every draft requires independent validation and confirmation.
 - Optimize cost by shortening repeated prompts, using structured outputs, and measuring actual usage; do not sacrifice transaction correctness merely to reduce token count.
-
-## Open Decisions
-
-- Remaining Notion views and the first idempotent repository write.
-- OpenAI API billing safeguards.
-- Opening EUR balance and its effective date.
-- Multi-user database provider, owner-Notion versus unified-storage strategy, invitation policy, and OpenAI cost policy.
-
-## Session Handoff — 2026-08-04
-
-- GitHub and Vercel are connected. The owner-only Telegram parser preview is deployed to Vercel Production, its health endpoint is verified, and Telegram reports the production webhook with no error or pending update.
-- The preview implementation was introduced in commit `4ab09b1` (`Deploy owner-only Telegram parser preview`), and multi-operation preview support was added in commit `fadcfe1` (`Support multi-operation Telegram previews`). The stable health URL is `https://budget-app-vert-one.vercel.app/api/telegram`, and the Telegram entrypoint is `https://t.me/budgetgleb_bot`.
-- Telegram and Notion credentials are configured locally and as encrypted Vercel Production/Development variables. Preview variables are not configured yet.
-- Notion `Категория` contains `Фриланс`, `Работа`, and `Спорт`; `Транспорт` remains the category for both fuel and bike rental.
-- Notion `Счёт` contains `Вьетнамский счёт`; Vietnamese QR payments use that account rather than `Наличные`.
-- Notion contains the verified numeric property `Остаток EUR`; no test or real transaction has been written through the application repository yet.
-- The text parser maps employment income to `Работа`, freelance income to `Фриланс`, gym/fitness/pickleball to `Спорт`, and fuel/bike rental to `Транспорт` while retaining the specific purpose in the comment.
-- Frankfurter v2 conversion to EUR is implemented and tested for EUR, VND, USD, and a prior-date fallback. It needs no API key.
-- OpenAI text parsing is implemented, `OPENAI_API_KEY` is configured locally and in Vercel Production/Development, and the local `gpt-5.6-luna` parser passed all 10 representative live cases. A ChatGPT subscription is not an API credential.
-- The local Telegram preview supports `/start`, `/help`, owner allowlisting, multi-operation parsing, separate balance observations, and one independently actionable preview message per draft. Every preview response states that Notion saving is disabled.
-- Production deployment `dpl_7Hms4DuHM9ni5FQd28wMETddPn9j` now runs the multi-operation preview and is `Ready`; the stable health endpoint returns HTTP `200`, and Telegram reports the expected webhook with no error or pending update. The owner smoke test of the new behavior is still pending.
-- Local verification passed `npm run typecheck`, `npm test` with 18 tests, `npm run test:parser:live` with 10/10 cases, `npm run build`, and `vercel build --prod`. Vercel reports the current Production preview as `Ready`.
-- The remaining immediate verification is the owner's smoke test from the `Immediate Test — Production Telegram Preview` section in `docs/checklist.md`, including the previously failed multi-operation message. After the test, inspect Vercel logs before marking any user-facing preview behavior verified.
-- Continue strictly from `Current Next Actions` in `docs/checklist.md`.
-- Multi-user storage and isolation planning is captured in Phase 10; implementation remains after the personal Telegram MVP.

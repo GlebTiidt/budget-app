@@ -6,7 +6,7 @@
 - `budget`: core domain types and rules.
 - `integrations`: external APIs such as Telegram, Notion, OpenAI, and Frankfurter.
 - `reports`: deterministic report datasets and chart rendering.
-- `storage`: persistence abstractions and adapters.
+- `storage`: planned persistence abstractions and adapters; add them with the first verified repository implementation.
 - `config`: environment-backed settings.
 - `clients`: Telegram is the MVP client; a future SwiftUI app calls the same server-side application boundary.
 
