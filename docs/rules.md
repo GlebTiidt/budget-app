@@ -46,6 +46,8 @@ This is the living rules file for the budget app. We update it when decisions be
 - Send only the current transaction text and controlled category/account lists to the language model, not the complete budget history.
 - One Telegram text message may produce multiple transaction drafts. Resolve references and later clarifications within that message, but do not send unrelated chat history to the language model.
 - A preview correction may send only the normalized current preview and the user's direct reply to the language model; never include unrelated messages or raw history.
+- In preview replies, a standalone `тоже` repeats the most recent field assignment for the next unresolved item in preview order, continuing from transactions to balance observations.
+- If money passes through an unsupported wallet before reaching a supported account, use the supported final destination as the account and keep the intermediate route only as additional note context.
 - Keep every extracted transaction as an independent draft with its own direction, amount, currency, date, category, account, confidence, and ambiguities.
 - A stated current or remaining balance is a balance observation, not a transaction, and must never be silently converted into income or expense.
 - Timezone defaults to `Asia/Ho_Chi_Minh` unless explicitly changed.

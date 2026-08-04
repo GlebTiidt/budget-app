@@ -84,6 +84,7 @@ Exit condition: one verified transaction can be written exactly once through the
 - [x] Show all drafts and balance observations from one input in one numbered Telegram preview without an inline button grid.
 - [x] Ask for every missing amount, currency, category, or account in one numbered clarification block.
 - [x] Accept ordinary reply text for whole-preview confirmation, field corrections, and numbered cancellation; return a revised preview without writing to Notion.
+- [x] Apply sequential `тоже` replies through transactions and balance observations, prefer a supported final destination account, and avoid duplicate missing-field questions.
 - [ ] Implement persistent Confirm, Correct, and Cancel state for the real save flow; preview replies remain non-writing UX checks.
 - [ ] Implement a proposed-new-category state with Create, Use `Другое`, and Cancel actions.
 - [ ] Append a confirmed category to Notion while preserving all existing select options and rejecting duplicates.
@@ -211,6 +212,7 @@ The multi-operation preview is deployed and its health endpoint and webhook are 
 - [ ] Verify that missing accounts, currencies, categories, or amounts are listed together with the affected transaction numbers.
 - [ ] Reply `для всех счёт Вьетнамский счёт`; expect one revised preview with that account applied to every compatible numbered item.
 - [ ] Reply with a targeted correction such as `3: валюта USD`; expect unchanged items to be preserved and only item 3 updated.
+- [ ] Reply with sequential lines ending in `тоже`; expect the last explicit correction to continue through each next transaction and then the `Б` balance item.
 - [ ] Reply `отмени 4`; expect only transaction 4 to disappear from the revised preview.
 - [ ] Reply `всё верно`; verify the bot says all items were checked and nothing was written to Notion.
 - [ ] Open the Notion `Транзакции` database and verify that the preview test created no new transaction rows.

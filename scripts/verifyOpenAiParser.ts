@@ -192,12 +192,18 @@ let revisionPassed = false;
 if (revisionSource) {
   const revised = await parser.revise(
     formatBudgetMessagePreview(revisionSource),
-    "Для всех счёт Вьетнамский счёт; отмени транзакцию 4",
+    [
+      "1: сначала через внешний кошелёк, потом на Вьетнамский счёт",
+      "2: Вьетнамский счёт",
+      "3: тоже",
+      "тоже",
+      "тоже",
+      "тоже"
+    ].join("\n"),
     fixedNow
   );
   revisionPassed =
-    revised.transactions.length === 4 &&
-    !revised.transactions.some((item) => item.amount === 420_000) &&
+    revised.transactions.length === 5 &&
     revised.transactions.every((item) => item.account === "Вьетнамский счёт") &&
     revised.balanceObservations.length === 1 &&
     revised.balanceObservations.every(

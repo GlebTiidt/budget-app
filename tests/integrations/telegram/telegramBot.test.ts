@@ -69,7 +69,10 @@ test("asks numbered follow-up questions for every missing field", () => {
         description: "Покупка",
         note: null,
         confidence: 0.4,
-        ambiguities: ["Не указана валюта"]
+        ambiguities: [
+          "Не указана валюта",
+          "Указан перевод через криптокошелёк, но счёт не определён"
+        ]
       }
     ],
     balanceObservations: [
@@ -82,7 +85,7 @@ test("asks numbered follow-up questions for every missing field", () => {
         ambiguities: ["Не указан счёт"]
       }
     ],
-    ambiguities: []
+    ambiguities: ["Для транзакции 1 счёт не определён однозначно"]
   });
 
   assert.match(preview, /1\. Расход — 50, валюта не указана/);
@@ -92,6 +95,8 @@ test("asks numbered follow-up questions for every missing field", () => {
     /Транзакция 1 «Покупка» — укажите валюту, категорию и счёт\./
   );
   assert.match(preview, /Наблюдение баланса Б1 — укажите счёт\./);
+  assert.doesNotMatch(preview, /криптокошелёк/);
+  assert.doesNotMatch(preview, /не определён однозначно/);
 });
 
 test("keeps a maximum-size batch inside one Telegram message", () => {

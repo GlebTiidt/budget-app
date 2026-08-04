@@ -296,12 +296,8 @@ function buildBudgetMessagePreview(
 
   sections.push(
     [
-      "Ответьте на это сообщение обычным текстом, например:",
-      "• всё верно",
-      "• для всех счёт Вьетнамский счёт",
-      "• 2: счёт Карта; 3: валюта USD",
-      "• отмени 4",
-      "«Б» означает наблюдение баланса."
+      "Ответьте: «всё верно», «для всех счёт Вьетнамский счёт», «3: валюта USD» или «отмени 4».",
+      "Можно перечислять изменения с новой строки; «тоже» повторяет последнее изменение для следующего пункта. «Б» — наблюдение баланса."
     ].join("\n"),
     PREVIEW_WARNING
   );
@@ -359,9 +355,10 @@ function collectClarificationRequests(
   includeDetails: boolean
 ): string[] {
   const requests: string[] = [];
+  const messageMissingFields = new Set<MissingField>();
 
   for (const [index, draft] of parsed.transactions.entries()) {
-    const missingFields: string[] = [];
+    const missingFields: MissingField[] = [];
     if (draft.amount === null) {
       missingFields.push("сумму");
     }
@@ -374,6 +371,9 @@ function collectClarificationRequests(
     if (draft.account === null) {
       missingFields.push("счёт");
     }
+    for (const field of missingFields) {
+      messageMissingFields.add(field);
+    }
 
     if (missingFields.length) {
       requests.push(
@@ -383,7 +383,7 @@ function collectClarificationRequests(
 
     if (includeDetails) {
       for (const ambiguity of draft.ambiguities.filter(
-        (item) => !isMissingFieldAmbiguity(item)
+        (item) => !ambiguityConcernsMissingField(item, missingFields)
       )) {
         requests.push(
           `• Транзакция ${index + 1} «${truncateText(draft.description, 48)}» — ${truncateText(ambiguity, 120)}`
@@ -393,13 +393,16 @@ function collectClarificationRequests(
   }
 
   for (const [index, observation] of parsed.balanceObservations.entries()) {
+    const missingFields: MissingField[] = [];
     if (observation.account === null) {
+      missingFields.push("счёт");
+      messageMissingFields.add("счёт");
       requests.push(`• Наблюдение баланса Б${index + 1} — укажите счёт.`);
     }
 
     if (includeDetails) {
       for (const ambiguity of observation.ambiguities.filter(
-        (item) => !isMissingFieldAmbiguity(item)
+        (item) => !ambiguityConcernsMissingField(item, missingFields)
       )) {
         requests.push(
           `• Наблюдение баланса Б${index + 1} — ${truncateText(ambiguity, 120)}`
@@ -409,7 +412,10 @@ function collectClarificationRequests(
   }
 
   if (includeDetails) {
-    for (const ambiguity of parsed.ambiguities) {
+    for (const ambiguity of parsed.ambiguities.filter(
+      (item) =>
+        !ambiguityConcernsMissingField(item, [...messageMissingFields])
+    )) {
       requests.push(`• По всему сообщению — ${truncateText(ambiguity, 140)}`);
     }
   }
@@ -448,10 +454,20 @@ function joinRussianList(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} и ${items.at(-1)}`;
 }
 
-function isMissingFieldAmbiguity(value: string): boolean {
-  return /(не\s+указ|не\s+определ|отсутств).*(сумм|валют|категор|сч[её]т)/i.test(
-    value
-  );
+type MissingField = "сумму" | "валюту" | "категорию" | "счёт";
+
+function ambiguityConcernsMissingField(
+  value: string,
+  missingFields: MissingField[]
+): boolean {
+  const patterns: Record<MissingField, RegExp> = {
+    сумму: /сумм|amount/i,
+    валюту: /валют|currency/i,
+    категорию: /категор|category/i,
+    счёт: /сч[её]т|account|кошел[её]к|крипт/i
+  };
+
+  return missingFields.some((field) => patterns[field].test(value));
 }
 
 function truncateText(value: string, maxLength: number): string {
