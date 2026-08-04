@@ -109,6 +109,7 @@ function buildInstructions(options: OpenAiTransactionParserOptions, now: Date): 
     "Resolve relative dates such as today, yesterday, or позавчера using that timezone.",
     categoryRule,
     "Category rules: salary or regular employment income is Работа; freelance income is Фриланс; gym, fitness, and pickleball are Спорт; fuel and bike rental are Транспорт, while the specific purpose remains in description or note.",
+    "Account rule: Vietnamese QR payments use Вьетнамский счёт; Наличные is only for physical cash.",
     accountRule,
     "List every material uncertainty in ambiguities and reduce confidence accordingly.",
     "The application will ask the user to confirm before saving."

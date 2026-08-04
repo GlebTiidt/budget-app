@@ -40,7 +40,7 @@ Exit condition: the bot token and owner allowlist are configured in both environ
 - [x] Confirm income categories: `Фриланс` and `Работа`.
 - [x] Treat fuel and bike rental as `Транспорт`; preserve `Бензин` and `Аренда байка` in the comment instead of creating categories.
 - [x] Confirm the accounts: `Наличные`, `Карта`, `Сбережения`, and `Вьетнамский счёт`; Vietnamese QR payments use `Вьетнамский счёт`.
-- [ ] Enter the opening total balance in EUR and the date from which balance tracking begins.
+- [ ] Enter the opening total balance in EUR and the date from which balance tracking begins. Blocked: the current account observation is not an exact total opening anchor.
 - [x] Track one total EUR balance in the MVP rather than separate per-account balances.
 - [x] Exclude transfers between personal accounts from the first version.
 - [ ] Provide 10 representative Telegram transaction messages, including slang and abbreviations.
@@ -75,7 +75,8 @@ Exit condition: one verified transaction can be written exactly once through the
 - [ ] Enable API billing and set a project budget or usage alert.
 - [x] Create a project API key; do not reuse or expose ChatGPT credentials.
 - [x] Add `OPENAI_API_KEY` locally and verify it with a live Responses API parser request.
-- [ ] Add `OPENAI_API_KEY` to Vercel Production and Development.
+- [x] Add `OPENAI_API_KEY` to Vercel Production and Development.
+- [x] Deploy an owner-only Telegram parser preview that clearly states confirmations do not write to Notion.
 - [ ] Test the parser against the 10 representative messages.
 - [ ] Add deterministic fallback/error messages for incomplete or ambiguous input.
 - [ ] Implement Confirm, Correct, and Cancel actions in Telegram.
@@ -135,7 +136,7 @@ Exit condition: the bot returns verified monthly totals and a chart whose segmen
 - [ ] Add integration tests with mocked OpenAI, Frankfurter, Notion, QuickChart, and Telegram responses.
 - [ ] Run `npm run typecheck`.
 - [ ] Run `npm test`.
-- [ ] Add the Telegram webhook HTTP endpoint for Vercel.
+- [x] Add the Telegram webhook HTTP endpoint for Vercel and register the production URL with Telegram.
 - [ ] Configure all production environment variables in Vercel.
 - [ ] Deploy to Vercel and register the Telegram webhook.
 - [ ] Perform an end-to-end production smoke test.
@@ -204,7 +205,7 @@ Exit condition: an invited user has an isolated budget and custom categories wit
 1. Provide an exact opening balance anchor and effective date; use one total EUR balance for the MVP.
 2. Plan the Phase 10 storage approach: personal Notion for the owner versus a separate managed database for invited users.
 3. Supply or approve 10 representative Telegram messages, including post-factum and reconciliation examples.
-4. Add `Остаток EUR`, create the remaining Notion views, and implement the first verified repository write.
-5. Confirm OpenAI API billing safeguards, add the key to Vercel, and test structured parsing against 10 representative messages before wiring the full Telegram flow.
+4. Create the remaining Notion views and implement the first verified repository write.
+5. Confirm OpenAI API billing safeguards and test structured parsing against 10 representative messages before wiring the full save flow.
 6. Wire the tested EUR converter and running-balance calculation into the confirmed Telegram transaction flow.
 7. Keep implementation of Phases 8–10 parked until the Telegram MVP completes its production smoke test.

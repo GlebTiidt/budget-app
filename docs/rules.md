@@ -102,14 +102,16 @@ This is the living rules file for the budget app. We update it when decisions be
 - Opening EUR balance and its effective date.
 - Multi-user database provider, owner-Notion versus unified-storage strategy, invitation policy, and OpenAI cost policy.
 
-## Session Handoff — 2026-07-18
+## Session Handoff — 2026-08-04
 
-- GitHub and Vercel are connected, and the latest production deployment was previously verified as `Ready`.
+- GitHub and Vercel are connected. The owner-only Telegram parser preview is deployed to Vercel Production, its health endpoint is verified, and Telegram reports the production webhook with no error or pending update.
 - Telegram and Notion credentials are configured locally and as encrypted Vercel Production/Development variables. Preview variables are not configured yet.
 - Notion `Категория` contains `Фриланс`, `Работа`, and `Спорт`; `Транспорт` remains the category for both fuel and bike rental.
 - Notion `Счёт` contains `Вьетнамский счёт`; Vietnamese QR payments use that account rather than `Наличные`.
+- Notion contains the verified numeric property `Остаток EUR`; no test or real transaction has been written through the application repository yet.
 - The text parser maps employment income to `Работа`, freelance income to `Фриланс`, gym/fitness/pickleball to `Спорт`, and fuel/bike rental to `Транспорт` while retaining the specific purpose in the comment.
 - Frankfurter v2 conversion to EUR is implemented and tested for EUR, VND, USD, and a prior-date fallback. It needs no API key.
-- OpenAI text parsing is implemented, the local `OPENAI_API_KEY` is configured, and one live `gpt-5.6-luna` Responses API parser request has succeeded. Vercel key setup and the 10-message verification set remain pending. A ChatGPT subscription is not an API credential.
+- OpenAI text parsing is implemented, `OPENAI_API_KEY` is configured locally and in Vercel Production/Development, and one live local `gpt-5.6-luna` Responses API parser request has succeeded. The production preview awaits a real Telegram message, and the 10-message verification set remains pending. A ChatGPT subscription is not an API credential.
+- The deployed Telegram preview supports `/start`, `/help`, owner allowlisting, one-operation parsing, and draft confirmation/correction/cancellation UX. Every preview response states that Notion saving is disabled.
 - Continue strictly from `Current Next Actions` in `docs/checklist.md`.
 - Multi-user storage and isolation planning is captured in Phase 10; implementation remains after the personal Telegram MVP.
