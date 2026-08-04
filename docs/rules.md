@@ -63,6 +63,15 @@ This is the living rules file for the budget app. We update it when decisions be
 - Parsing failures should ask for a corrected message instead of silently guessing.
 - Destructive actions must require explicit confirmation.
 
+### Parser Preview Mode
+
+- The deployed preview is owner-only and exists to test Telegram delivery, language, parsing quality, and draft controls before enabling financial writes.
+- Every preview draft and callback response must state that nothing was written to Notion.
+- `Верно`, `Исправить`, and `Отмена` exercise preview UX only; they must not call currency conversion or any repository write.
+- Preview testing must use synthetic or low-sensitivity examples and must never include credentials, API keys, or unrelated private data.
+- Application logs must not contain raw Telegram transaction text. Test feedback may record the exact test phrase only when the owner intentionally provides it for the 10-message verification set.
+- Do not mark the full Telegram transaction flow complete until one real Telegram message passes confirmation, conversion, an idempotent Notion write, and a verified receipt.
+
 ## Notion Rules
 
 - Keep Notion database schema stable and documented.
@@ -98,13 +107,14 @@ This is the living rules file for the budget app. We update it when decisions be
 
 - The 10 representative Telegram messages used to verify AI parsing.
 - Remaining Notion views and the first idempotent repository write.
-- OpenAI API billing safeguards, Vercel key setup, and live verification against 10 representative messages.
+- OpenAI API billing safeguards and live verification against 10 representative messages.
 - Opening EUR balance and its effective date.
 - Multi-user database provider, owner-Notion versus unified-storage strategy, invitation policy, and OpenAI cost policy.
 
 ## Session Handoff — 2026-08-04
 
 - GitHub and Vercel are connected. The owner-only Telegram parser preview is deployed to Vercel Production, its health endpoint is verified, and Telegram reports the production webhook with no error or pending update.
+- The preview implementation was introduced in commit `4ab09b1` (`Deploy owner-only Telegram parser preview`). The stable health URL is `https://budget-app-vert-one.vercel.app/api/telegram`, and the Telegram entrypoint is `https://t.me/budgetgleb_bot`.
 - Telegram and Notion credentials are configured locally and as encrypted Vercel Production/Development variables. Preview variables are not configured yet.
 - Notion `Категория` contains `Фриланс`, `Работа`, and `Спорт`; `Транспорт` remains the category for both fuel and bike rental.
 - Notion `Счёт` contains `Вьетнамский счёт`; Vietnamese QR payments use that account rather than `Наличные`.
@@ -113,5 +123,7 @@ This is the living rules file for the budget app. We update it when decisions be
 - Frankfurter v2 conversion to EUR is implemented and tested for EUR, VND, USD, and a prior-date fallback. It needs no API key.
 - OpenAI text parsing is implemented, `OPENAI_API_KEY` is configured locally and in Vercel Production/Development, and one live local `gpt-5.6-luna` Responses API parser request has succeeded. The production preview awaits a real Telegram message, and the 10-message verification set remains pending. A ChatGPT subscription is not an API credential.
 - The deployed Telegram preview supports `/start`, `/help`, owner allowlisting, one-operation parsing, and draft confirmation/correction/cancellation UX. Every preview response states that Notion saving is disabled.
+- Local verification passed `npm run typecheck`, `npm test` with 10 tests, and `vercel build --prod`. Vercel reports the Git-backed Production deployment as `Ready`.
+- The remaining immediate verification is the owner's evening smoke test from the `Immediate Test — Production Telegram Preview` section in `docs/checklist.md`. After the test, inspect Vercel logs before marking any user-facing preview behavior verified.
 - Continue strictly from `Current Next Actions` in `docs/checklist.md`.
 - Multi-user storage and isolation planning is captured in Phase 10; implementation remains after the personal Telegram MVP.

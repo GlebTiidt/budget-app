@@ -138,7 +138,7 @@ Exit condition: the bot returns verified monthly totals and a chart whose segmen
 - [ ] Run `npm test`.
 - [x] Add the Telegram webhook HTTP endpoint for Vercel and register the production URL with Telegram.
 - [ ] Configure all production environment variables in Vercel.
-- [ ] Deploy to Vercel and register the Telegram webhook.
+- [x] Deploy the owner-only parser preview to Vercel Production and register its Telegram webhook.
 - [ ] Perform an end-to-end production smoke test.
 - [ ] Verify that logs contain no tokens or sensitive budget text.
 - [ ] Document token rotation and recovery steps.
@@ -200,12 +200,46 @@ Detailed future category UX is captured in [`docs/ideas-checklist.md`](ideas-che
 
 Exit condition: an invited user has an isolated budget and custom categories without access to the owner's Notion or any other user's data.
 
+## Immediate Test — Production Telegram Preview
+
+This smoke test validates only the safe parser preview. It must not create or update a Notion transaction.
+
+### Deployment Preconditions
+
+- [x] Push preview implementation commit `4ab09b1` to `main` and verify GitHub received it.
+- [x] Verify the Git-backed Vercel Production deployment is `Ready`.
+- [x] Verify `https://budget-app-vert-one.vercel.app/api/telegram` returns HTTP `200` with `telegram-preview` health JSON.
+- [x] Configure encrypted `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_ALLOWED_USER_IDS` values required by the Production preview.
+- [x] Register the production webhook and verify Telegram reports no webhook error or pending update.
+- [x] Run `npm run typecheck`, `npm test` (10 passing tests), and `vercel build --prod`.
+
+### Owner Evening Smoke Test
+
+- [ ] Open [`@budgetgleb_bot`](https://t.me/budgetgleb_bot) and send `/start`; verify the bot explains that it is a preview and will not write to Notion.
+- [ ] Send `/help`; verify it returns concise examples and repeats the no-write warning.
+- [ ] Send `Сегодня заплатил 120к донгов за кофе по QR`; expect an expense in `VND`, category `Кофешоп`, account `Вьетнамский счёт`, and today's local date.
+- [ ] Send `Вчера бензин 100к донгов, платил по QR`; expect category `Транспорт`, account `Вьетнамский счёт`, and yesterday's local date while fuel remains in the description or comment.
+- [ ] Send `Получил 500 USD за фриланс`; expect income with category `Фриланс` and no invented account.
+- [ ] Send an intentionally incomplete example such as `Потратил 50`; expect a clarification request or an explicit low-confidence draft with ambiguities rather than silent guessing.
+- [ ] Press `✅ Верно`; verify the bot says the draft was checked and nothing was written to Notion.
+- [ ] Press `✏️ Исправить`; verify the bot asks for a corrected message.
+- [ ] Press `✖️ Отмена`; verify the bot cancels the draft and repeats that nothing was written to Notion.
+- [ ] Open the Notion `Транзакции` database and verify that the preview test created no new transaction rows.
+- [ ] Record any incorrect field, awkward wording, missing reply, or slow response. Share the test phrase, expected result, and actual result without any credentials.
+
+### Follow-up After the Owner Test
+
+- [ ] Inspect Vercel runtime logs for webhook/OpenAI errors and confirm they contain no raw transaction text or secrets.
+- [ ] Add the accepted evening examples to the 10-message representative verification set.
+- [ ] Fix observed parsing or UX issues, rerun local verification, redeploy, and repeat only the failed smoke-test cases.
+- [ ] Mark user-facing preview behavior verified only after the real Telegram smoke test passes.
+
 ## Current Next Actions
 
-1. Provide an exact opening balance anchor and effective date; use one total EUR balance for the MVP.
-2. Plan the Phase 10 storage approach: personal Notion for the owner versus a separate managed database for invited users.
-3. Supply or approve 10 representative Telegram messages, including post-factum and reconciliation examples.
+1. Complete the `Immediate Test — Production Telegram Preview` checklist and record the actual results.
+2. Provide an exact opening balance anchor and effective date; use one total EUR balance for the MVP.
+3. Supply or approve the remaining examples for the 10-message verification set, including post-factum and reconciliation cases.
 4. Create the remaining Notion views and implement the first verified repository write.
-5. Confirm OpenAI API billing safeguards and test structured parsing against 10 representative messages before wiring the full save flow.
+5. Confirm OpenAI API billing safeguards and finish the 10-message structured parsing verification before enabling the save flow.
 6. Wire the tested EUR converter and running-balance calculation into the confirmed Telegram transaction flow.
-7. Keep implementation of Phases 8–10 parked until the Telegram MVP completes its production smoke test.
+7. Plan the Phase 10 storage approach, but keep implementation of Phases 8–10 parked until the Telegram MVP completes its production smoke test.
