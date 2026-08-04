@@ -7,9 +7,7 @@ import type {
 } from "../../../src/integrations/openai/openAiTransactionParser.js";
 import {
   createTelegramPreviewBot,
-  formatBalanceObservationPreview,
-  formatBudgetMessageSummary,
-  formatDraftPreview,
+  formatBudgetMessagePreview,
   isTelegramUserAllowed
 } from "../../../src/integrations/telegram/telegramBot.js";
 
@@ -19,52 +17,59 @@ test("allows only configured Telegram users", () => {
   assert.equal(isTelegramUserAllowed(undefined, ["100001"]), false);
 });
 
-test("formats a safe preview without claiming a Notion write", () => {
-  const preview = formatDraftPreview({
-    amount: 120_000,
-    currency: "VND",
-    direction: "expense",
-    occurredOn: "2026-08-04",
-    category: "Кофешоп",
-    account: "Вьетнамский счёт",
-    description: "Кофе",
-    note: null,
-    confidence: 0.99,
+test("formats all parsed items in one safe preview", () => {
+  const preview = formatBudgetMessagePreview({
+    transactions: [
+      {
+        amount: 120_000,
+        currency: "VND",
+        direction: "expense",
+        occurredOn: "2026-08-04",
+        category: "Кофешоп",
+        account: "Вьетнамский счёт",
+        description: "Кофе",
+        note: null,
+        confidence: 0.99,
+        ambiguities: []
+      },
+      createDraft("income")
+    ],
+    balanceObservations: [
+      {
+        amount: 20_000,
+        currency: "VND",
+        occurredOn: "2026-08-04",
+        account: "Вьетнамский счёт",
+        confidence: 0.9,
+        ambiguities: []
+      }
+    ],
     ambiguities: []
   });
 
-  assert.match(preview, /Расход: 120[  ]000 VND/);
-  assert.match(preview, /Дата: 04\.08\.2026/);
-  assert.match(preview, /Счёт: Вьетнамский счёт/);
-  assert.match(preview, /Уверенность: высокая/);
+  assert.match(preview, /Транзакции: 2 · Наблюдения баланса: 1/);
+  assert.match(preview, /1\. Расход — 120[  ]000 VND/);
+  assert.match(preview, /2\. Доход — 50 USD/);
+  assert.match(preview, /Б1\. 20[  ]000 VND/);
+  assert.match(preview, /Наблюдения баланса \(не доход и не расход\)/);
   assert.match(preview, /в Notion ничего не записано/);
 });
 
-test("shows ambiguities and a lower-confidence warning", () => {
-  const preview = formatDraftPreview({
-    amount: 50,
-    currency: "USD",
-    direction: "expense",
-    occurredOn: "2026-08-04",
-    category: null,
-    account: null,
-    description: "Покупка",
-    note: null,
-    confidence: 0.4,
-    ambiguities: ["Не указан счёт"]
-  });
-
-  assert.match(preview, /низкая — лучше уточнить/);
-  assert.match(preview, /Нужно уточнить:\n• Не указан счёт/);
-});
-
-test("summarizes every transaction type and balance observation", () => {
-  const summary = formatBudgetMessageSummary({
+test("asks numbered follow-up questions for every missing field", () => {
+  const preview = formatBudgetMessagePreview({
     transactions: [
-      createDraft("income"),
-      createDraft("expense"),
-      createDraft("expense"),
-      createDraft("transfer")
+      {
+        amount: 50,
+        currency: null,
+        direction: "expense",
+        occurredOn: "2026-08-04",
+        category: null,
+        account: null,
+        description: "Покупка",
+        note: null,
+        confidence: 0.4,
+        ambiguities: ["Не указана валюта"]
+      }
     ],
     balanceObservations: [
       {
@@ -72,59 +77,41 @@ test("summarizes every transaction type and balance observation", () => {
         currency: "VND",
         occurredOn: "2026-08-04",
         account: null,
-        confidence: 0.75,
+        confidence: 0.7,
         ambiguities: ["Не указан счёт"]
       }
     ],
     ambiguities: []
   });
 
-  assert.match(summary, /Нашёл транзакций: 4/);
-  assert.match(summary, /Доходы: 1 · Расходы: 2 · Переводы: 1/);
-  assert.match(summary, /Наблюдения баланса: 1/);
-});
-
-test("formats each multi-transaction draft with its position", () => {
-  const preview = formatDraftPreview(createDraft("expense"), {
-    position: 2,
-    total: 5
-  });
-
-  assert.match(preview, /^Транзакция 2 из 5/);
-  assert.match(preview, /Расход: 50 USD/);
-});
-
-test("keeps an incomplete transaction visible without inventing currency", () => {
-  const preview = formatDraftPreview({
-    ...createDraft("expense"),
-    currency: null,
-    confidence: 0.3,
-    ambiguities: ["Не указана валюта"]
-  });
-
-  assert.match(preview, /Расход: 50, валюта не указана/);
-  assert.match(preview, /низкая — лучше уточнить/);
-});
-
-test("formats a balance observation as neither income nor expense", () => {
-  const preview = formatBalanceObservationPreview(
-    {
-      amount: 20_000,
-      currency: "VND",
-      occurredOn: "2026-08-04",
-      account: null,
-      confidence: 0.7,
-      ambiguities: ["Не указан счёт"]
-    },
-    { position: 1, total: 1 }
+  assert.match(preview, /1\. Расход — 50, валюта не указана/);
+  assert.match(preview, /низкая уверенность/);
+  assert.match(
+    preview,
+    /Транзакция 1 «Покупка» — укажите валюту, категорию и счёт\./
   );
-
-  assert.match(preview, /Наблюдение баланса 1 из 1/);
-  assert.match(preview, /Остаток: 20[  ]000 VND/);
-  assert.match(preview, /Это не доход и не расход/);
+  assert.match(preview, /Наблюдение баланса Б1 — укажите счёт\./);
 });
 
-test("Telegram sends a summary and an independently actionable preview for every item", async () => {
+test("keeps a maximum-size batch inside one Telegram message", () => {
+  const longText = "Очень длинное синтетическое описание ".repeat(20);
+  const preview = formatBudgetMessagePreview({
+    transactions: Array.from({ length: 20 }, (_, index) => ({
+      ...createDraft(index % 2 ? "expense" : "income"),
+      account: null,
+      description: `${longText}${index}`,
+      note: longText,
+      ambiguities: [longText]
+    })),
+    balanceObservations: [],
+    ambiguities: [longText]
+  });
+
+  assert.ok(preview.length <= 4096);
+  assert.match(preview, /Preview: в Notion ничего не записано\.$/);
+});
+
+test("Telegram sends one combined message with independently actionable rows", async () => {
   const parser: TransactionTextParser = {
     async parse() {
       return {
@@ -170,6 +157,9 @@ test("Telegram sends a summary and an independently actionable preview for every
       if (method === "sendChatAction") {
         return { ok: true, result: true };
       }
+      if (method === "answerCallbackQuery") {
+        return { ok: true, result: true };
+      }
       if (method === "sendMessage") {
         sentMessages.push(payload);
         return {
@@ -203,15 +193,43 @@ test("Telegram sends a summary and an independently actionable preview for every
     }
   });
 
-  assert.equal(sentMessages.length, 4);
-  assert.match(String(sentMessages[0]?.text), /Нашёл транзакций: 2/);
-  assert.match(String(sentMessages[1]?.text), /Транзакция 1 из 2/);
-  assert.match(String(sentMessages[2]?.text), /Транзакция 2 из 2/);
-  assert.match(String(sentMessages[3]?.text), /Наблюдение баланса 1 из 1/);
+  assert.equal(sentMessages.length, 1);
+  assert.match(String(sentMessages[0]?.text), /Транзакции: 2/);
+  assert.match(String(sentMessages[0]?.text), /1\. Доход/);
+  assert.match(String(sentMessages[0]?.text), /2\. Расход/);
+  assert.match(String(sentMessages[0]?.text), /Б1\./);
 
-  for (const message of sentMessages.slice(1)) {
-    assert.ok(message.reply_markup, "every item preview must have its own controls");
-  }
+  const replyMarkup = sentMessages[0]?.reply_markup as {
+    inline_keyboard: Array<Array<{ callback_data: string; text: string }>>;
+  };
+  assert.equal(replyMarkup.inline_keyboard.length, 3);
+  assert.equal(
+    replyMarkup.inline_keyboard[1]?.[1]?.callback_data,
+    "preview:correct:transaction:2"
+  );
+
+  await bot.handleUpdate({
+    update_id: 2,
+    callback_query: {
+      id: "callback-1",
+      from: {
+        id: 100001,
+        is_bot: false,
+        first_name: "Owner"
+      },
+      chat_instance: "test-chat-instance",
+      data: "preview:correct:transaction:2",
+      message: {
+        message_id: 1,
+        date: 1_775_290_700,
+        chat: { id: 100001, type: "private", first_name: "Owner" },
+        text: String(sentMessages[0]?.text)
+      }
+    }
+  });
+
+  assert.equal(sentMessages.length, 2);
+  assert.match(String(sentMessages[1]?.text), /исправленный текст.*Транзакция №2/);
 });
 
 function createDraft(

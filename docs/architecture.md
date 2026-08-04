@@ -22,7 +22,7 @@ Implement one complete path:
 Telegram text -> OpenAI structured drafts -> independent confirmation -> validation -> currency conversion -> Notion rows -> Telegram confirmation
 ```
 
-A single Telegram message may yield multiple ordered transaction drafts plus separate balance observations. Every transaction is reviewed independently; a balance observation is never treated as income or expense.
+A single Telegram message may yield multiple ordered transaction drafts plus separate balance observations. The Telegram client renders them in one numbered preview with per-item controls and one clarification block. Every transaction is still reviewed independently; a balance observation is never treated as income or expense.
 
 Reports query already converted EUR values from Notion. The application aggregates totals itself and uses QuickChart only to render a PNG; the language model is never used for arithmetic.
 

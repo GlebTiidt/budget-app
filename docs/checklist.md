@@ -81,7 +81,9 @@ Exit condition: one verified transaction can be written exactly once through the
 - [x] Deploy an owner-only Telegram parser preview that clearly states confirmations do not write to Notion.
 - [x] Test the parser against 10 synthetic representative messages with the live configured model; all 10 pass.
 - [x] Add deterministic fallback/error messages for incomplete or ambiguous input; missing transaction amount or currency remains explicit instead of being guessed.
-- [ ] Implement Confirm, Correct, and Cancel actions in Telegram.
+- [x] Show all drafts and balance observations from one input in one numbered Telegram preview with per-item controls.
+- [x] Ask for every missing amount, currency, category, or account in one numbered clarification block.
+- [ ] Implement stateful Confirm, Correct, and Cancel actions for the real save flow; preview callbacks remain non-writing UX checks.
 - [ ] Implement a proposed-new-category state with Create, Use `Другое`, and Cancel actions.
 - [ ] Append a confirmed category to Notion while preserving all existing select options and rejecting duplicates.
 
@@ -204,7 +206,8 @@ The multi-operation preview is deployed and its health endpoint and webhook are 
 - [ ] Send `/help`; verify it returns concise examples and repeats the no-write warning.
 - [ ] Send `Сегодня заплатил 120к донгов за кофе по QR`; expect an expense in `VND`, category `Кофешоп`, account `Вьетнамский счёт`, and today's local date.
 - [ ] Send an intentionally incomplete example such as `Потратил 50`; expect a clarification request or an explicit low-confidence draft with ambiguities rather than silent guessing.
-- [ ] Send a synthetic message containing one employment income, four expenses in mixed currencies, and a stated remaining balance; expect five independent transaction drafts and one separate balance observation.
+- [ ] Send a synthetic message containing one employment income, four expenses in mixed currencies, and a stated remaining balance; expect one bot response containing five numbered transaction drafts and one separate balance observation.
+- [ ] Verify that missing accounts, currencies, categories, or amounts are listed together with the affected transaction numbers.
 - [ ] Press `✅ Верно`; verify the bot says the draft was checked and nothing was written to Notion.
 - [ ] Press `✏️ Исправить`; verify the bot asks for a corrected message.
 - [ ] Press `✖️ Отмена`; verify the bot cancels the draft and repeats that nothing was written to Notion.

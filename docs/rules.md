@@ -64,6 +64,8 @@ This is the living rules file for the budget app. We update it when decisions be
 - Only allow configured Telegram user IDs.
 - Bot replies must be short and action-oriented.
 - Parsing failures should ask for a corrected message instead of silently guessing.
+- Show all drafts and balance observations from one user message in one numbered Telegram preview while keeping per-item controls.
+- Collect missing amount, currency, category, account, and other ambiguities into one numbered clarification block instead of sending separate prompts.
 - Destructive actions must require explicit confirmation.
 
 ### Parser Preview Mode

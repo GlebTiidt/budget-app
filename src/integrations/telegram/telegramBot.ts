@@ -22,11 +22,11 @@ type TelegramPreviewBotOptions = {
   parser?: TransactionTextParser;
 };
 
-const previewKeyboard = new InlineKeyboard()
-  .text("✅ Верно", "preview:confirm")
-  .text("✏️ Исправить", "preview:correct")
-  .row()
-  .text("✖️ Отмена", "preview:cancel");
+type PreviewAction = "confirm" | "correct" | "cancel";
+type PreviewItemKind = "transaction" | "balance";
+
+const TELEGRAM_MESSAGE_LIMIT = 4096;
+const PREVIEW_WARNING = "Preview: в Notion ничего не записано.";
 
 export function createTelegramPreviewBot(
   config: AppConfig,
@@ -73,7 +73,8 @@ export function createTelegramPreviewBot(
         "Напишите одну или несколько операций обычным языком, например:",
         "Получил 500 USD за фриланс, потом заплатил 120к донгов за кофе по QR.",
         "",
-        "Я разделю сообщение на отдельные черновики, но пока ничего не запишу в Notion."
+        "Я покажу все черновики одним сообщением и отдельно отмечу, какие данные нужно уточнить.",
+        "Пока ничего не запишу в Notion."
       ].join("\n")
     );
   });
@@ -83,6 +84,7 @@ export function createTelegramPreviewBot(
       [
         "Сейчас можно тестировать распознавание одной или нескольких операций в сообщении.",
         "Для каждой операции укажите сумму, валюту и назначение; дату и счёт можно написать словами.",
+        "Если валюта, категория или счёт пропущены, я перечислю вопросы по номерам транзакций.",
         "",
         "Примеры:",
         "• Вчера продукты 350к VND по QR",
@@ -113,31 +115,51 @@ export function createTelegramPreviewBot(
     await ctx.reply("Черновик отменён. В Notion ничего не записано.");
   });
 
+  bot.callbackQuery(
+    /^preview:(confirm|correct|cancel):(transaction|balance):(\d+)$/,
+    async (ctx) => {
+      const action = ctx.match[1] as PreviewAction;
+      const kind = ctx.match[2] as PreviewItemKind;
+      const position = Number(ctx.match[3]);
+      const label =
+        kind === "transaction"
+          ? `Транзакция №${position}`
+          : `Наблюдение баланса №${position}`;
+      const checkedWord = kind === "transaction" ? "проверена" : "проверено";
+      const cancelledWord = kind === "transaction" ? "отменена" : "отменено";
+
+      if (action === "confirm") {
+        await ctx.answerCallbackQuery({ text: `${label} ${checkedWord}.` });
+        await ctx.reply(`✅ ${label} ${checkedWord}. В Notion ничего не записано.`);
+        return;
+      }
+
+      if (action === "correct") {
+        await ctx.answerCallbackQuery();
+        await ctx.reply(
+          `✏️ Отправьте исправленный текст для пункта «${label}». Я покажу новый preview.`
+        );
+        return;
+      }
+
+      await ctx.answerCallbackQuery({ text: `${label} ${cancelledWord}.` });
+      await ctx.reply(`✖️ ${label} ${cancelledWord}. В Notion ничего не записано.`);
+    }
+  );
+
   bot.on("message:text", async (ctx) => {
     await ctx.replyWithChatAction("typing");
 
     try {
       const parsed = await parser.parse(ctx.message.text);
-      await ctx.reply(formatBudgetMessageSummary(parsed));
+      const preview = formatBudgetMessagePreview(parsed);
 
-      for (const [index, draft] of parsed.transactions.entries()) {
-        await ctx.reply(
-          formatDraftPreview(draft, {
-            position: index + 1,
-            total: parsed.transactions.length
-          }),
-          { reply_markup: previewKeyboard }
-        );
-      }
-
-      for (const [index, observation] of parsed.balanceObservations.entries()) {
-        await ctx.reply(
-          formatBalanceObservationPreview(observation, {
-            position: index + 1,
-            total: parsed.balanceObservations.length
-          }),
-          { reply_markup: previewKeyboard }
-        );
+      if (parsed.transactions.length || parsed.balanceObservations.length) {
+        await ctx.reply(preview, {
+          reply_markup: createBudgetPreviewKeyboard(parsed)
+        });
+      } else {
+        await ctx.reply(preview);
       }
     } catch (error: unknown) {
       console.error(
@@ -175,110 +197,215 @@ export function isTelegramUserAllowed(
   return userId !== undefined && allowedUserIds.includes(String(userId));
 }
 
-type PreviewPosition = {
-  position: number;
-  total: number;
-};
-
-export function formatBudgetMessageSummary(parsed: ParsedBudgetMessageDraft): string {
-  const incomeCount = parsed.transactions.filter(
-    (draft) => draft.direction === "income"
-  ).length;
-  const expenseCount = parsed.transactions.filter(
-    (draft) => draft.direction === "expense"
-  ).length;
-  const transferCount = parsed.transactions.filter(
-    (draft) => draft.direction === "transfer"
-  ).length;
-  const ambiguities = parsed.ambiguities.length
-    ? `\n\nПо всему сообщению нужно уточнить:\n${parsed.ambiguities
-        .map((item) => `• ${item}`)
-        .join("\n")}`
-    : "";
-
+export function formatBudgetMessagePreview(parsed: ParsedBudgetMessageDraft): string {
   if (parsed.transactions.length === 0 && parsed.balanceObservations.length === 0) {
+    const clarificationLines = parsed.ambiguities.map(
+      (item) => `• ${truncateText(item, 160)}`
+    );
+
     return [
       "Не нашёл ни одной финансовой операции или наблюдения баланса.",
-      parsed.ambiguities.length
-        ? `\nНужно уточнить:\n${parsed.ambiguities.map((item) => `• ${item}`).join("\n")}`
+      clarificationLines.length
+        ? `\nНужно уточнить:\n${clarificationLines.join("\n")}`
         : " Напишите сумму, валюту и назначение точнее.",
-      "\nПока это только тест — в Notion ничего не записано."
+      `\n${PREVIEW_WARNING}`
     ].join("");
   }
 
-  return [
-    `Нашёл транзакций: ${parsed.transactions.length}.`,
-    `Доходы: ${incomeCount} · Расходы: ${expenseCount} · Переводы: ${transferCount}.`,
-    `Наблюдения баланса: ${parsed.balanceObservations.length}.`,
-    "Каждый черновик отправляю отдельно для проверки.",
-    ambiguities
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const detailed = buildBudgetMessagePreview(parsed, true);
+  if (detailed.length <= TELEGRAM_MESSAGE_LIMIT) {
+    return detailed;
+  }
+
+  return limitTelegramMessage(buildBudgetMessagePreview(parsed, false));
 }
 
-export function formatDraftPreview(
+export function createBudgetPreviewKeyboard(
+  parsed: ParsedBudgetMessageDraft
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  let hasPreviousRow = false;
+
+  for (const [index] of parsed.transactions.entries()) {
+    if (hasPreviousRow) {
+      keyboard.row();
+    }
+    addPreviewKeyboardRow(keyboard, String(index + 1), "transaction", index + 1);
+    hasPreviousRow = true;
+  }
+
+  for (const [index] of parsed.balanceObservations.entries()) {
+    if (hasPreviousRow) {
+      keyboard.row();
+    }
+    addPreviewKeyboardRow(keyboard, `Б${index + 1}`, "balance", index + 1);
+    hasPreviousRow = true;
+  }
+
+  return keyboard;
+}
+
+function buildBudgetMessagePreview(
+  parsed: ParsedBudgetMessageDraft,
+  includeDetails: boolean
+): string {
+  const sections: string[] = [
+    `Транзакции: ${parsed.transactions.length} · Наблюдения баланса: ${parsed.balanceObservations.length}`
+  ];
+
+  if (parsed.transactions.length) {
+    sections.push(
+      [
+        "Транзакции:",
+        ...parsed.transactions.map((draft, index) =>
+          formatCombinedTransaction(draft, index + 1, includeDetails)
+        )
+      ].join("\n")
+    );
+  }
+
+  if (parsed.balanceObservations.length) {
+    sections.push(
+      [
+        "Наблюдения баланса (не доход и не расход):",
+        ...parsed.balanceObservations.map((observation, index) =>
+          formatCombinedBalanceObservation(observation, index + 1)
+        )
+      ].join("\n")
+    );
+  }
+
+  const clarifications = collectClarificationRequests(parsed, includeDetails);
+  if (clarifications.length) {
+    sections.push(["Нужно уточнить:", ...clarifications].join("\n"));
+  }
+
+  sections.push(
+    "Кнопки ниже относятся к номерам транзакций; «Б» означает наблюдение баланса.",
+    PREVIEW_WARNING
+  );
+
+  return sections.join("\n\n");
+}
+
+function formatCombinedTransaction(
   draft: ParsedTransactionDraft,
-  position?: PreviewPosition
+  position: number,
+  includeDetails: boolean
 ): string {
   const direction = {
     expense: "Расход",
     income: "Доход",
     transfer: "Перевод"
   }[draft.direction];
-  const confidence =
-    draft.confidence >= 0.85
-      ? "высокая"
-      : draft.confidence >= 0.6
-        ? "средняя"
-        : "низкая — лучше уточнить";
-  const ambiguities = draft.ambiguities.length
-    ? `\n\nНужно уточнить:\n${draft.ambiguities.map((item) => `• ${item}`).join("\n")}`
-    : "";
+  const fields = [
+    `${position}. ${direction} — ${formatDraftAmount(draft.amount, draft.currency)}`,
+    formatIsoDate(draft.occurredOn),
+    draft.category ?? "категория не указана",
+    draft.account ?? "счёт не указан",
+    `«${truncateText(draft.description, includeDetails ? 72 : 36)}»`
+  ];
 
-  return [
-    position
-      ? `Транзакция ${position.position} из ${position.total} — проверьте:`
-      : "Проверьте, правильно ли я понял:",
-    "",
-    `${direction}: ${formatDraftAmount(draft.amount, draft.currency)}`,
-    `Дата: ${formatIsoDate(draft.occurredOn)}`,
-    `Категория: ${draft.category ?? "не определена"}`,
-    `Счёт: ${draft.account ?? "не указан"}`,
-    `Описание: ${draft.description}`,
-    draft.note ? `Комментарий: ${draft.note}` : null,
-    `Уверенность: ${confidence}${ambiguities}`,
-    "",
-    "Пока это только тестовый черновик — в Notion ничего не записано."
-  ]
-    .filter((line): line is string => line !== null)
-    .join("\n");
+  if (includeDetails && draft.note) {
+    fields.push(`комментарий: ${truncateText(draft.note, 72)}`);
+  }
+  if (draft.confidence < 0.6) {
+    fields.push("низкая уверенность");
+  }
+
+  return fields.join(" · ");
 }
 
-export function formatBalanceObservationPreview(
+function formatCombinedBalanceObservation(
   observation: ParsedBalanceObservationDraft,
-  position?: PreviewPosition
+  position: number
 ): string {
-  const confidence = formatConfidence(observation.confidence);
-  const ambiguities = observation.ambiguities.length
-    ? `\n\nНужно уточнить:\n${observation.ambiguities
-        .map((item) => `• ${item}`)
-        .join("\n")}`
-    : "";
+  const fields = [
+    `Б${position}. ${formatAmount(observation.amount)} ${observation.currency}`,
+    formatIsoDate(observation.occurredOn),
+    observation.account ?? "счёт не указан"
+  ];
 
-  return [
-    position
-      ? `Наблюдение баланса ${position.position} из ${position.total} — проверьте:`
-      : "Проверьте наблюдение баланса:",
-    "",
-    `Остаток: ${formatAmount(observation.amount)} ${observation.currency}`,
-    `Дата: ${formatIsoDate(observation.occurredOn)}`,
-    `Счёт: ${observation.account ?? "не указан"}`,
-    `Уверенность: ${confidence}${ambiguities}`,
-    "",
-    "Это не доход и не расход.",
-    "Пока это только тестовый черновик — в Notion ничего не записано."
-  ].join("\n");
+  if (observation.confidence < 0.6) {
+    fields.push("низкая уверенность");
+  }
+
+  return fields.join(" · ");
+}
+
+function collectClarificationRequests(
+  parsed: ParsedBudgetMessageDraft,
+  includeDetails: boolean
+): string[] {
+  const requests: string[] = [];
+
+  for (const [index, draft] of parsed.transactions.entries()) {
+    const missingFields: string[] = [];
+    if (draft.amount === null) {
+      missingFields.push("сумму");
+    }
+    if (draft.currency === null) {
+      missingFields.push("валюту");
+    }
+    if (draft.direction !== "transfer" && draft.category === null) {
+      missingFields.push("категорию");
+    }
+    if (draft.account === null) {
+      missingFields.push("счёт");
+    }
+
+    if (missingFields.length) {
+      requests.push(
+        `• Транзакция ${index + 1} «${truncateText(draft.description, 48)}» — укажите ${joinRussianList(missingFields)}.`
+      );
+    }
+
+    if (includeDetails) {
+      for (const ambiguity of draft.ambiguities.filter(
+        (item) => !isMissingFieldAmbiguity(item)
+      )) {
+        requests.push(
+          `• Транзакция ${index + 1} «${truncateText(draft.description, 48)}» — ${truncateText(ambiguity, 120)}`
+        );
+      }
+    }
+  }
+
+  for (const [index, observation] of parsed.balanceObservations.entries()) {
+    if (observation.account === null) {
+      requests.push(`• Наблюдение баланса Б${index + 1} — укажите счёт.`);
+    }
+
+    if (includeDetails) {
+      for (const ambiguity of observation.ambiguities.filter(
+        (item) => !isMissingFieldAmbiguity(item)
+      )) {
+        requests.push(
+          `• Наблюдение баланса Б${index + 1} — ${truncateText(ambiguity, 120)}`
+        );
+      }
+    }
+  }
+
+  if (includeDetails) {
+    for (const ambiguity of parsed.ambiguities) {
+      requests.push(`• По всему сообщению — ${truncateText(ambiguity, 140)}`);
+    }
+  }
+
+  return requests;
+}
+
+function addPreviewKeyboardRow(
+  keyboard: InlineKeyboard,
+  label: string,
+  kind: PreviewItemKind,
+  position: number
+): void {
+  keyboard
+    .text(`✅ ${label}`, `preview:confirm:${kind}:${position}`)
+    .text(`✏️ ${label}`, `preview:correct:${kind}:${position}`)
+    .text(`✖️ ${label}`, `preview:cancel:${kind}:${position}`);
 }
 
 function formatDraftAmount(amount: number | null, currency: string | null): string {
@@ -294,14 +421,6 @@ function formatDraftAmount(amount: number | null, currency: string | null): stri
   return `${formatAmount(amount)} ${currency}`;
 }
 
-function formatConfidence(confidence: number): string {
-  return confidence >= 0.85
-    ? "высокая"
-    : confidence >= 0.6
-      ? "средняя"
-      : "низкая — лучше уточнить";
-}
-
 function formatAmount(value: number): string {
   return new Intl.NumberFormat("ru-RU", {
     maximumFractionDigits: 2
@@ -311,4 +430,34 @@ function formatAmount(value: number): string {
 function formatIsoDate(value: string): string {
   const [year, month, day] = value.split("-");
   return `${day}.${month}.${year}`;
+}
+
+function joinRussianList(items: string[]): string {
+  if (items.length <= 1) {
+    return items[0] ?? "данные";
+  }
+  return `${items.slice(0, -1).join(", ")} и ${items.at(-1)}`;
+}
+
+function isMissingFieldAmbiguity(value: string): boolean {
+  return /(не\s+указ|не\s+определ|отсутств).*(сумм|валют|категор|сч[её]т)/i.test(
+    value
+  );
+}
+
+function truncateText(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function limitTelegramMessage(value: string): string {
+  if (value.length <= TELEGRAM_MESSAGE_LIMIT) {
+    return value;
+  }
+
+  const suffix = `\n\n… Часть длинных деталей сокращена.\n${PREVIEW_WARNING}`;
+  return `${value.slice(0, TELEGRAM_MESSAGE_LIMIT - suffix.length).trimEnd()}${suffix}`;
 }
