@@ -39,11 +39,11 @@ Exit condition: the bot token and owner allowlist are configured in both environ
 - [x] Confirm the initial expense categories: `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, `Другое`, `Кофешоп`, `Еда вне дома`, and `Спорт`.
 - [x] Confirm income categories: `Фриланс` and `Работа`.
 - [x] Treat fuel and bike rental as `Транспорт`; preserve `Бензин` and `Аренда байка` in the comment instead of creating categories.
-- [x] Confirm the accounts: `Наличные`, `Карта`, `Сбережения`, and `Вьетнамский счёт`; Vietnamese QR payments use `Вьетнамский счёт`.
+- [x] Confirm the accounts: `Наличные`, `Карта`, `Сбережения`, `Вьетнамский счёт`, and `Crypto`; Vietnamese QR payments use `Вьетнамский счёт`, and cryptocurrency holdings, wallets, and payments use `Crypto`.
 - [ ] Enter the opening total balance in EUR and the date from which balance tracking begins. Blocked: the current account observation is not an exact total opening anchor.
 - [x] Track one total EUR balance in the MVP rather than separate per-account balances.
-- [x] Exclude transfers between personal accounts from the first version.
-- [x] Provide 10 representative Telegram transaction messages, including slang and abbreviations; keep the reproducible set in `scripts/verifyOpenAiParser.ts`.
+- [x] Include transfers between supported personal accounts; require a source and destination account while keeping the total EUR balance unchanged.
+- [x] Provide 11 representative Telegram transaction messages, including slang, abbreviations, and a crypto-account example; keep the reproducible set in `scripts/verifyOpenAiParser.ts`.
 - [x] Discard raw Telegram text after the normalized transaction is confirmed.
 
 Exit condition: currencies, categories, accounts, opening-balance policy, transfer policy, examples, and raw-text policy are documented.
@@ -51,7 +51,7 @@ Exit condition: currencies, categories, accounts, opening-balance policy, transf
 ## Phase 2 — Notion Ledger
 
 - [x] Create the `Транзакции` database in Notion and verify API access.
-- [x] Add and verify the MVP schema: `Операция`, `Дата`, `Тип`, `Исходная сумма`, `Валюта`, `Курс к EUR`, `Сумма EUR`, `Категория`, `Счёт`, `Комментарий`, and `Telegram ID`.
+- [x] Add and verify the MVP schema: `Операция`, `Дата`, `Тип`, `Исходная сумма`, `Валюта`, `Курс к EUR`, `Сумма EUR`, `Категория`, `Счёт`, `Счёт назначения`, `Комментарий`, and `Telegram ID`.
 - [x] Add and verify the number property `Остаток EUR` containing the running balance after each transaction.
 - [ ] Store the opening EUR balance and its effective date in a single controlled settings location, not as an ordinary expense or income.
 - [ ] Store confirmed balance observations separately from transactions so reconciliation never fabricates income or expense.
@@ -61,6 +61,7 @@ Exit condition: currencies, categories, accounts, opening-balance policy, transf
 - [x] Add local `NOTION_API_KEY`, `NOTION_BUDGET_DATABASE_ID`, and `NOTION_BUDGET_DATA_SOURCE_ID` values and verify them.
 - [x] Add `NOTION_API_KEY`, `NOTION_BUDGET_DATABASE_ID`, and `NOTION_BUDGET_DATA_SOURCE_ID` to Vercel Production and Development.
 - [x] Synchronize Notion categories `Фриланс`, `Работа`, and `Спорт`; keep fuel and bike rental under `Транспорт`.
+- [x] Synchronize the Notion account option `Crypto` while preserving every existing `Счёт` option.
 - [ ] Implement the Notion transaction mapper and repository.
 - [ ] Verify an idempotent test write and delete the test row manually.
 
@@ -69,7 +70,9 @@ Exit condition: one verified transaction can be written exactly once through the
 ## Phase 3 — OpenAI Text Processing
 
 - [x] Add the official OpenAI JavaScript SDK.
-- [x] Add a structured-output parser for amount, currency, direction, date, category, account, description, confidence, and ambiguities.
+- [x] Add the official TOON JavaScript encoder and serialize dynamic structured prompt context as TOON while retaining strict JSON Schema output.
+- [x] Benchmark a representative six-operation prompt with the official TOON CLI: estimated input fell from about 340 JSON tokens to 207 TOON tokens (`-39.1%`); keep measuring real production usage before treating this as a universal saving.
+- [x] Add a structured-output parser for amount, currency, direction, date, category, source/ordinary account, transfer destination account, description, confidence, and ambiguities.
 - [x] Parse every distinct transaction in one Telegram message into an ordered array of independent drafts.
 - [x] Parse a stated current balance separately from transactions so it is never invented as income or expense.
 - [x] Prevent the parser from writing directly to Notion.
@@ -79,12 +82,13 @@ Exit condition: one verified transaction can be written exactly once through the
 - [x] Add `OPENAI_API_KEY` locally and verify it with a live Responses API parser request.
 - [x] Add `OPENAI_API_KEY` to Vercel Production and Development.
 - [x] Deploy an owner-only Telegram parser preview that clearly states confirmations do not write to Notion.
-- [x] Test the parser against 10 synthetic representative messages with the live configured model; all 10 pass.
+- [x] Test the parser against 11 synthetic representative messages with the live configured model; all 11 pass.
 - [x] Add deterministic fallback/error messages for incomplete or ambiguous input; missing transaction amount or currency remains explicit instead of being guessed.
 - [x] Show all drafts and balance observations from one input in one numbered Telegram preview without an inline button grid.
 - [x] Ask for every missing amount, currency, category, or account in one numbered clarification block.
 - [x] Accept ordinary reply text for whole-preview confirmation, field corrections, and numbered cancellation; return a revised preview without writing to Notion.
 - [x] Apply sequential `тоже` replies through transactions and balance observations, prefer a supported final destination account, and avoid duplicate missing-field questions.
+- [x] Recognize a correction that describes `Crypto → Вьетнамский счёт` as a separate personal transfer instead of overwriting the income account.
 - [ ] Implement persistent Confirm, Correct, and Cancel state for the real save flow; preview replies remain non-writing UX checks.
 - [ ] Implement a proposed-new-category state with Create, Use `Другое`, and Cancel actions.
 - [ ] Append a confirmed category to Notion while preserving all existing select options and rejecting duplicates.
@@ -114,7 +118,7 @@ Exit condition: tested conversions are deterministic and retain all audit fields
 - [ ] Recalculate the affected running balances after a backdated transaction is inserted, corrected, or deleted.
 - [ ] Save the confirmed transaction to Notion.
 - [ ] Prevent duplicate writes using the Telegram message ID.
-- [ ] Return a concise receipt containing original amount, EUR amount, remaining EUR balance, category, account, and date.
+- [ ] Return a concise receipt containing original amount, EUR amount, remaining EUR balance, category, account route when applicable, and date.
 - [ ] Accept an observed current balance for a named account in a supported currency and compare its converted EUR value with the calculated balance.
 - [ ] When the observed balance is lower, explain the difference conversationally and collect one or more post-factum expense drafts.
 - [ ] Require independent confirmation for every recalled expense, show the remaining unexplained difference, and allow the user to stop without inventing an adjustment.
@@ -216,6 +220,7 @@ The multi-operation preview is deployed and its health endpoint and webhook are 
 - [ ] Reply `отмени 4`; expect only transaction 4 to disappear from the revised preview.
 - [ ] Reply `всё верно`; verify the bot says all items were checked and nothing was written to Notion.
 - [ ] Open the Notion `Транзакции` database and verify that the preview test created no new transaction rows.
+- [ ] Repeat the complex case with `Аванс изначально Crypto, потом перевод всей суммы на вьет счёт`; expect income on `Crypto`, a separate `Crypto → Вьетнамский счёт` transfer, all later expenses and the balance observation on `Вьетнамский счёт`, and no prematurely truncated clarification.
 - [ ] Record any incorrect field, awkward wording, missing reply, or slow response. Share the test phrase, expected result, and actual result without any credentials.
 
 ### Follow-up

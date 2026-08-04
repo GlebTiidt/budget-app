@@ -24,6 +24,8 @@ Telegram text -> OpenAI structured drafts -> independent confirmation -> validat
 
 A single Telegram message may yield multiple ordered transaction drafts plus separate balance observations. The Telegram client renders them in one numbered preview with one clarification block. The user manages the preview by replying with ordinary text; a correction request sends only that normalized preview and direct reply back through the structured parser. Every transaction is still reviewed independently, and a balance observation is never treated as income or expense.
 
+Dynamic OpenAI input context is serialized with the official TOON encoder: current text or normalized preview, the direct correction reply, controlled catalogs, timestamp, and timezone. OpenAI still returns strict JSON Schema Structured Outputs, which application code validates before Telegram sees them. Personal transfers use `account` as the source and `destinationAccount` as the receiver; they do not change the one total EUR balance.
+
 Reports query already converted EUR values from Notion. The application aggregates totals itself and uses QuickChart only to render a PNG; the language model is never used for arithmetic.
 
 Frankfurter v2 provides the historical rate without a project API key. The converter sends the transaction date, converts into EUR in application code, uses rate `1` for EUR, and rejects a returned rate dated after the transaction.

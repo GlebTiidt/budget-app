@@ -14,7 +14,15 @@ type DirectionCounts = {
 };
 
 type ExpectedTransaction = Partial<
-  Pick<ParsedTransactionDraft, "amount" | "currency" | "direction" | "category" | "account">
+  Pick<
+    ParsedTransactionDraft,
+    | "amount"
+    | "currency"
+    | "direction"
+    | "category"
+    | "account"
+    | "destinationAccount"
+  >
 >;
 
 type VerificationCase = {
@@ -65,6 +73,21 @@ const verificationCases: VerificationCase[] = [
         direction: "expense",
         category: "Кофешоп",
         account: "Вьетнамский счёт"
+      }
+    ]
+  },
+  {
+    name: "subscription expense from crypto wallet",
+    input: "Оплатил подписку на сервис 20 USD с криптокошелька",
+    expectedDirections: { income: 0, expense: 1, transfer: 0 },
+    expectedBalanceObservations: 0,
+    expectedTransactions: [
+      {
+        amount: 20,
+        currency: "USD",
+        direction: "expense",
+        category: "Подписки",
+        account: "Crypto"
       }
     ]
   },
@@ -134,7 +157,15 @@ const verificationCases: VerificationCase[] = [
     input: "Сегодня перевёл 200 EUR с карты в сбережения",
     expectedDirections: { income: 0, expense: 0, transfer: 1 },
     expectedBalanceObservations: 0,
-    expectedTransactions: [{ amount: 200, currency: "EUR", direction: "transfer" }]
+    expectedTransactions: [
+      {
+        amount: 200,
+        currency: "EUR",
+        direction: "transfer",
+        account: "Карта",
+        destinationAccount: "Сбережения"
+      }
+    ]
   }
 ];
 
@@ -171,9 +202,13 @@ for (const [index, verificationCase] of verificationCases.entries()) {
   );
 
   for (const draft of parsed.transactions) {
+    const accountRoute =
+      draft.direction === "transfer"
+        ? ` · ${draft.account ?? "?"} → ${draft.destinationAccount ?? "?"}`
+        : ` · ${draft.account ?? "без счёта"}`;
     console.log(
       `   ${draft.direction}: ${draft.amount ?? "?"} ${draft.currency ?? "?"} · ` +
-        `${draft.category ?? "без категории"} · ${draft.description}`
+        `${draft.category ?? "без категории"} · ${draft.description}${accountRoute}`
     );
   }
 
@@ -189,6 +224,7 @@ for (const [index, verificationCase] of verificationCases.entries()) {
 console.log(`Live parser verification: ${passed}/${verificationCases.length} passed.`);
 
 let revisionPassed = false;
+let accountTransferRevisionPassed = false;
 if (revisionSource) {
   const revised = await parser.revise(
     formatBudgetMessagePreview(revisionSource),
@@ -214,9 +250,53 @@ if (revisionSource) {
       `transactions=${revised.transactions.length}, ` +
       `balances=${revised.balanceObservations.length}`
   );
+
+  const routed = await parser.revise(
+    formatBudgetMessagePreview(revisionSource),
+    [
+      "1: Аванс изначально Crypto, потом перевод всей суммы на вьет счёт",
+      "2: Вьет счёт",
+      "тоже",
+      "всё остальное тоже"
+    ].join("\n"),
+    fixedNow
+  );
+  const routedIncome = routed.transactions.find(
+    (item) => item.direction === "income" && item.amount === 240
+  );
+  const routedTransfer = routed.transactions.find(
+    (item) =>
+      item.direction === "transfer" &&
+      item.amount === 240 &&
+      item.account === "Crypto" &&
+      item.destinationAccount === "Вьетнамский счёт"
+  );
+  const routedExpenses = routed.transactions.filter(
+    (item) => item.direction === "expense"
+  );
+  accountTransferRevisionPassed =
+    routed.transactions.length === 6 &&
+    routedIncome?.account === "Crypto" &&
+    Boolean(routedTransfer) &&
+    routedExpenses.length === 4 &&
+    routedExpenses.every((item) => item.account === "Вьетнамский счёт") &&
+    routed.balanceObservations.length === 1 &&
+    routed.balanceObservations.every(
+      (item) => item.account === "Вьетнамский счёт"
+    );
+  console.log(
+    `Live account-transfer revision: ${accountTransferRevisionPassed ? "PASS" : "FAIL"} — ` +
+      `transactions=${routed.transactions.length}, ` +
+      `transfers=${routed.transactions.filter((item) => item.direction === "transfer").length}, ` +
+      `balances=${routed.balanceObservations.length}`
+  );
 }
 
-if (passed !== verificationCases.length || !revisionPassed) {
+if (
+  passed !== verificationCases.length ||
+  !revisionPassed ||
+  !accountTransferRevisionPassed
+) {
   process.exitCode = 1;
 }
 

@@ -6,6 +6,7 @@ This file captures future product ideas and UX details. It is not the delivery-s
 
 - [ ] Let every new user choose their initial categories during onboarding instead of inheriting the owner's private list unchanged.
 - [ ] Offer a small recommended starter set that the user may keep, remove, or extend.
+- [ ] Use `Животные` instead of `Кот` in the recommended default category set; keep a specific animal or pet name in the normalized description or comment.
 - [ ] Keep every user's categories isolated; one user's changes must never affect another user or the owner's Notion options.
 - [ ] Allow users to create, rename, archive, and merge only their own categories.
 

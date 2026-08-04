@@ -7,6 +7,7 @@ Personal budget app with an owner-only Telegram parser preview and a planned con
 - `src/budget` contains current domain primitives and controlled catalogs.
 - `src/integrations/telegram` contains the owner-only preview bot and message formatting.
 - `src/integrations/openai` contains structured text parsing; it never writes directly to Notion.
+- OpenAI prompt data uses TOON for compact structured input and strict JSON Schema for validated output.
 - `src/integrations/currency` contains deterministic Frankfurter-to-EUR conversion.
 - `src/config` contains environment parsing and app settings.
 - `docs/rules.md` is the living development rules file.

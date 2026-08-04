@@ -98,6 +98,30 @@ test("allows missing transaction amount or currency to remain explicit", () => {
   ]);
 });
 
+test("normalizes both accounts of a personal transfer", () => {
+  const parsed = normalizeParsedBudgetMessage({
+    transactions: [
+      transaction({
+        amount: 177,
+        currency: "usd",
+        direction: "transfer",
+        category: null,
+        account: " Crypto ",
+        destinationAccount: " Вьетнамский счёт ",
+        description: "Перевод аванса"
+      })
+    ],
+    balanceObservations: [],
+    ambiguities: []
+  });
+
+  assert.equal(parsed.transactions[0]?.account, "Crypto");
+  assert.equal(
+    parsed.transactions[0]?.destinationAccount,
+    "Вьетнамский счёт"
+  );
+});
+
 test("rejects invalid nested parser data before it reaches Telegram", () => {
   assert.throws(
     () =>
@@ -128,6 +152,7 @@ function transaction(overrides: Record<string, unknown> = {}) {
     occurredOn: "2026-08-04",
     category: "Другое",
     account: null,
+    destinationAccount: null,
     description: "Тест",
     note: null,
     confidence: 0.9,

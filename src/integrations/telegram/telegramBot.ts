@@ -88,13 +88,14 @@ export function createTelegramPreviewBot(
     await ctx.reply(
       [
         "Сейчас можно тестировать распознавание одной или нескольких операций в сообщении.",
-        "Для каждой операции укажите сумму, валюту и назначение; дату и счёт можно написать словами.",
+        "Для каждой операции укажите сумму, валюту и назначение; для перевода напишите оба счёта.",
         "Если валюта, категория или счёт пропущены, я перечислю вопросы по номерам транзакций.",
         "",
         "Примеры:",
         "• Вчера продукты 350к VND по QR",
         "• Получил 500 USD за фриланс",
         "• Сегодня бензин 100к донгов",
+        "• Перевёл 177 USD с Crypto на Вьетнамский счёт",
         "",
         "Это preview: подтверждение пока не сохраняет данные в Notion."
       ].join("\n")
@@ -239,7 +240,7 @@ export function isTelegramUserAllowed(
 export function formatBudgetMessagePreview(parsed: ParsedBudgetMessageDraft): string {
   if (parsed.transactions.length === 0 && parsed.balanceObservations.length === 0) {
     const clarificationLines = parsed.ambiguities.map(
-      (item) => `• ${truncateText(item, 160)}`
+      (item) => `• ${normalizeText(item)}`
     );
 
     return [
@@ -317,14 +318,28 @@ function formatCombinedTransaction(
   }[draft.direction];
   const fields = [
     `${position}. ${direction} — ${formatDraftAmount(draft.amount, draft.currency)}`,
-    formatIsoDate(draft.occurredOn),
-    draft.category ?? "категория не указана",
-    draft.account ?? "счёт не указан",
-    `«${truncateText(draft.description, includeDetails ? 72 : 36)}»`
+    formatIsoDate(draft.occurredOn)
   ];
 
+  if (draft.direction === "transfer") {
+    fields.push(
+      `${draft.account ?? "счёт-источник не указан"} → ${draft.destinationAccount ?? "счёт-получатель не указан"}`
+    );
+  } else {
+    fields.push(draft.category ?? "категория не указана");
+    fields.push(draft.account ?? "счёт не указан");
+  }
+
+  fields.push(
+    `«${
+      includeDetails
+        ? normalizeText(draft.description)
+        : truncateText(draft.description, 36)
+    }»`
+  );
+
   if (includeDetails && draft.note) {
-    fields.push(`комментарий: ${truncateText(draft.note, 72)}`);
+    fields.push(`комментарий: ${normalizeText(draft.note)}`);
   }
   if (draft.confidence < 0.6) {
     fields.push("низкая уверенность");
@@ -368,7 +383,14 @@ function collectClarificationRequests(
     if (draft.direction !== "transfer" && draft.category === null) {
       missingFields.push("категорию");
     }
-    if (draft.account === null) {
+    if (draft.direction === "transfer") {
+      if (draft.account === null) {
+        missingFields.push("счёт-источник");
+      }
+      if (draft.destinationAccount === null) {
+        missingFields.push("счёт-получатель");
+      }
+    } else if (draft.account === null) {
       missingFields.push("счёт");
     }
     for (const field of missingFields) {
@@ -377,7 +399,11 @@ function collectClarificationRequests(
 
     if (missingFields.length) {
       requests.push(
-        `• Транзакция ${index + 1} «${truncateText(draft.description, 48)}» — укажите ${joinRussianList(missingFields)}.`
+        `• Транзакция ${index + 1} «${
+          includeDetails
+            ? normalizeText(draft.description)
+            : truncateText(draft.description, 48)
+        }» — укажите ${joinRussianList(missingFields)}.`
       );
     }
 
@@ -386,7 +412,7 @@ function collectClarificationRequests(
         (item) => !ambiguityConcernsMissingField(item, missingFields)
       )) {
         requests.push(
-          `• Транзакция ${index + 1} «${truncateText(draft.description, 48)}» — ${truncateText(ambiguity, 120)}`
+          `• Транзакция ${index + 1} «${normalizeText(draft.description)}» — ${normalizeText(ambiguity)}`
         );
       }
     }
@@ -405,7 +431,7 @@ function collectClarificationRequests(
         (item) => !ambiguityConcernsMissingField(item, missingFields)
       )) {
         requests.push(
-          `• Наблюдение баланса Б${index + 1} — ${truncateText(ambiguity, 120)}`
+          `• Наблюдение баланса Б${index + 1} — ${normalizeText(ambiguity)}`
         );
       }
     }
@@ -416,7 +442,7 @@ function collectClarificationRequests(
       (item) =>
         !ambiguityConcernsMissingField(item, [...messageMissingFields])
     )) {
-      requests.push(`• По всему сообщению — ${truncateText(ambiguity, 140)}`);
+      requests.push(`• По всему сообщению — ${normalizeText(ambiguity)}`);
     }
   }
 
@@ -454,7 +480,13 @@ function joinRussianList(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} и ${items.at(-1)}`;
 }
 
-type MissingField = "сумму" | "валюту" | "категорию" | "счёт";
+type MissingField =
+  | "сумму"
+  | "валюту"
+  | "категорию"
+  | "счёт"
+  | "счёт-источник"
+  | "счёт-получатель";
 
 function ambiguityConcernsMissingField(
   value: string,
@@ -464,18 +496,24 @@ function ambiguityConcernsMissingField(
     сумму: /сумм|amount/i,
     валюту: /валют|currency/i,
     категорию: /категор|category/i,
-    счёт: /сч[её]т|account|кошел[её]к|крипт/i
+    счёт: /сч[её]т|account|кошел[её]к|крипт/i,
+    "счёт-источник": /источник|source|откуда|со сч[её]т|с кошел/i,
+    "счёт-получатель": /получател|destination|куда|на сч[её]т|в кошел/i
   };
 
   return missingFields.some((field) => patterns[field].test(value));
 }
 
 function truncateText(value: string, maxLength: number): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
+  const normalized = normalizeText(value);
   if (normalized.length <= maxLength) {
     return normalized;
   }
   return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function normalizeText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function limitTelegramMessage(value: string): string {

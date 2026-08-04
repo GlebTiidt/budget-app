@@ -28,6 +28,7 @@ test("formats all parsed items in one safe preview", () => {
         occurredOn: "2026-08-04",
         category: "Кофешоп",
         account: "Вьетнамский счёт",
+        destinationAccount: null,
         description: "Кофе",
         note: null,
         confidence: 0.99,
@@ -66,6 +67,7 @@ test("asks numbered follow-up questions for every missing field", () => {
         occurredOn: "2026-08-04",
         category: null,
         account: null,
+        destinationAccount: null,
         description: "Покупка",
         note: null,
         confidence: 0.4,
@@ -97,6 +99,56 @@ test("asks numbered follow-up questions for every missing field", () => {
   assert.match(preview, /Наблюдение баланса Б1 — укажите счёт\./);
   assert.doesNotMatch(preview, /криптокошелёк/);
   assert.doesNotMatch(preview, /не определён однозначно/);
+});
+
+test("formats a personal transfer as a complete account route", () => {
+  const preview = formatBudgetMessagePreview({
+    transactions: [
+      {
+        ...createDraft("transfer"),
+        amount: 177,
+        account: "Crypto",
+        destinationAccount: "Вьетнамский счёт",
+        category: null,
+        description: "Перевод аванса"
+      },
+      {
+        ...createDraft("transfer"),
+        account: "Crypto",
+        destinationAccount: null,
+        category: null,
+        description: "Перевод без получателя"
+      }
+    ],
+    balanceObservations: [],
+    ambiguities: []
+  });
+
+  assert.match(preview, /1\. Перевод — 177 USD.*Crypto → Вьетнамский счёт/);
+  assert.match(
+    preview,
+    /Транзакция 2 «Перевод без получателя» — укажите счёт-получатель\./
+  );
+});
+
+test("keeps complete clarification text when the preview fits Telegram", () => {
+  const clarification =
+    "Нужно уточнить сумму в донгах после обмена, если она отличалась от эквивалента исходных 177 USD, и подтвердить, что вся сумма пришла на Вьетнамский счёт.";
+  const preview = formatBudgetMessagePreview({
+    transactions: [
+      {
+        ...createDraft("income"),
+        account: "Crypto",
+        note: clarification
+      }
+    ],
+    balanceObservations: [],
+    ambiguities: [clarification]
+  });
+
+  assert.ok(preview.length <= 4096);
+  assert.match(preview, /вся сумма пришла на Вьетнамский счёт\./);
+  assert.doesNotMatch(preview, /эквивалента исходных…/);
 });
 
 test("keeps a maximum-size batch inside one Telegram message", () => {
@@ -344,6 +396,7 @@ function createDraft(
     occurredOn: "2026-08-04",
     category: direction === "income" ? "Работа" : "Другое",
     account: null,
+    destinationAccount: null,
     description: "Тест",
     note: null,
     confidence: 0.9,

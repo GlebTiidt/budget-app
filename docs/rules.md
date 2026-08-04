@@ -37,15 +37,18 @@ This is the living rules file for the budget app. We update it when decisions be
 - Currency conversion and report totals are calculated by application code, not by the language model.
 - The opening balance is a controlled EUR setting with an effective date; it is not recorded as a fake income transaction.
 - The personal MVP tracks one total EUR balance rather than separate per-account balances.
-- The parser may recognize transfers for clarification, but saving transfers between personal accounts is excluded from the first version.
+- Transfers between supported personal accounts are first-class transactions. A transfer stores both its source account and destination account and requires confirmation before saving.
 - Every confirmed transaction stores `Остаток EUR`, the running balance immediately after that operation.
 - For the total balance, income adds the converted EUR amount, expense subtracts it, and transfers between personal accounts do not change it.
+- For transaction drafts, `account` is the payment account for an expense, the receiving account for income, and the source account for a transfer; `destinationAccount` is required only for a transfer.
 - Backdated inserts, corrections, and deletions require recalculation of every later running balance in deterministic date/order sequence.
 - Currency conversion uses Frankfurter v2 without an API key and targets EUR. EUR-to-EUR uses rate `1` without a network request.
 - Request the rate for the transaction date. Accept the API's same-day rate or the latest returned prior rate, but never a rate after the transaction date.
 - Send only the current transaction text and controlled category/account lists to the language model, not the complete budget history.
+- Serialize structured OpenAI input context with the official TOON encoder. Keep strict JSON Schema Structured Outputs as the validated response contract.
 - One Telegram text message may produce multiple transaction drafts. Resolve references and later clarifications within that message, but do not send unrelated chat history to the language model.
 - A preview correction may send only the normalized current preview and the user's direct reply to the language model; never include unrelated messages or raw history.
+- The preview, direct reply, controlled catalogs, timestamp, and timezone are serialized into one TOON input document for correction requests.
 - In preview replies, a standalone `тоже` repeats the most recent field assignment for the next unresolved item in preview order, continuing from transactions to balance observations.
 - If money passes through an unsupported wallet before reaching a supported account, use the supported final destination as the account and keep the intermediate route only as additional note context.
 - Keep every extracted transaction as an independent draft with its own direction, amount, currency, date, category, account, confidence, and ambiguities.
@@ -54,8 +57,8 @@ This is the living rules file for the budget app. We update it when decisions be
 - The MVP uses the transaction date to request the historical rate and stores the applied rate; it does not expose a separate rate-date property in Notion.
 - The MVP does not store a `Source` property because Telegram is the only input source.
 - The MVP relies on Notion's built-in page creation metadata instead of a visible `Created` property.
-- The current account list is `Наличные`, `Карта`, `Сбережения`, and `Вьетнамский счёт`.
-- Vietnamese QR payments use `Вьетнамский счёт`; `Наличные` is reserved for physical cash.
+- The current account list is `Наличные`, `Карта`, `Сбережения`, `Вьетнамский счёт`, and `Crypto`.
+- Vietnamese QR payments use `Вьетнамский счёт`; cryptocurrency holdings, wallets, and payments use `Crypto`; `Наличные` is reserved for physical cash.
 - The current currency list is `USD`, `RUB`, `VND`, `AUD`, and `EUR`.
 - A user may report an observed current balance for a named account in a supported currency. The application converts that observation to EUR for comparison with the calculated balance but does not store it as income or expense. Account-specific reconciliation does not change the MVP decision to report one total EUR balance.
 - When an observed balance is below the calculated balance, the bot starts a reconciliation conversation in plain, non-judgmental language, states the difference, and invites the user to recall missing expenses.

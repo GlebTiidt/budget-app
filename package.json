@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@notionhq/client": "^4.0.0",
+    "@toon-format/toon": "^4.1.0",
     "grammy": "^1.38.1",
     "openai": "^6.48.0"
   },
