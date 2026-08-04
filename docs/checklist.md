@@ -43,7 +43,7 @@ Exit condition: the bot token and owner allowlist are configured in both environ
 - [ ] Enter the opening total balance in EUR and the date from which balance tracking begins. Blocked: the current account observation is not an exact total opening anchor.
 - [x] Track one total EUR balance in the MVP rather than separate per-account balances.
 - [x] Exclude transfers between personal accounts from the first version.
-- [ ] Provide 10 representative Telegram transaction messages, including slang and abbreviations.
+- [x] Provide 10 representative Telegram transaction messages, including slang and abbreviations; keep the reproducible set in `scripts/verifyOpenAiParser.ts`.
 - [x] Discard raw Telegram text after the normalized transaction is confirmed.
 
 Exit condition: currencies, categories, accounts, opening-balance policy, transfer policy, examples, and raw-text policy are documented.
@@ -70,6 +70,8 @@ Exit condition: one verified transaction can be written exactly once through the
 
 - [x] Add the official OpenAI JavaScript SDK.
 - [x] Add a structured-output parser for amount, currency, direction, date, category, account, description, confidence, and ambiguities.
+- [x] Parse every distinct transaction in one Telegram message into an ordered array of independent drafts.
+- [x] Parse a stated current balance separately from transactions so it is never invented as income or expense.
 - [x] Prevent the parser from writing directly to Notion.
 - [x] Create or open an OpenAI API Platform account.
 - [ ] Enable API billing and set a project budget or usage alert.
@@ -77,8 +79,8 @@ Exit condition: one verified transaction can be written exactly once through the
 - [x] Add `OPENAI_API_KEY` locally and verify it with a live Responses API parser request.
 - [x] Add `OPENAI_API_KEY` to Vercel Production and Development.
 - [x] Deploy an owner-only Telegram parser preview that clearly states confirmations do not write to Notion.
-- [ ] Test the parser against the 10 representative messages.
-- [ ] Add deterministic fallback/error messages for incomplete or ambiguous input.
+- [x] Test the parser against the 10 representative messages with the live configured model; all 10 passed on 2026-08-04.
+- [x] Add deterministic fallback/error messages for incomplete or ambiguous input; missing transaction amount or currency remains explicit instead of being guessed.
 - [ ] Implement Confirm, Correct, and Cancel actions in Telegram.
 - [ ] Implement a proposed-new-category state with Create, Use `Другое`, and Cancel actions.
 - [ ] Append a confirmed category to Notion while preserving all existing select options and rejecting duplicates.
@@ -227,19 +229,28 @@ This smoke test validates only the safe parser preview. It must not create or up
 - [ ] Open the Notion `Транзакции` database and verify that the preview test created no new transaction rows.
 - [ ] Record any incorrect field, awkward wording, missing reply, or slow response. Share the test phrase, expected result, and actual result without any credentials.
 
+### Local Multi-Operation Regression — 2026-08-04
+
+- [x] Reproduce the owner message that previously returned only the `177 USD` income draft.
+- [x] Extract five independent transactions from that message: one `177 USD` employment income and four expenses (`2 250 000 VND`, `30 USD`, `500 000 VND`, and `11 USD`).
+- [x] Extract the stated `20 000 VND` remainder as one balance observation rather than income or expense.
+- [x] Preserve an amount-less salary-advance mention as an incomplete income draft while independently extracting the `50 000 VND` fuel expense.
+- [x] Verify each parsed item is sent as a separate Telegram preview with its own controls.
+- [x] Run `npm run typecheck`, `npm test` (18 passing tests), `npm run test:parser:live` (10/10 live cases), `npm run build`, and `vercel build --prod`.
+- [ ] Deploy the multi-operation preview and repeat the failed owner case in production Telegram.
+
 ### Follow-up After the Owner Test
 
 - [ ] Inspect Vercel runtime logs for webhook/OpenAI errors and confirm they contain no raw transaction text or secrets.
-- [ ] Add the accepted evening examples to the 10-message representative verification set.
+- [x] Add the accepted evening examples to the 10-message representative verification set.
 - [ ] Fix observed parsing or UX issues, rerun local verification, redeploy, and repeat only the failed smoke-test cases.
 - [ ] Mark user-facing preview behavior verified only after the real Telegram smoke test passes.
 
 ## Current Next Actions
 
-1. Complete the `Immediate Test — Production Telegram Preview` checklist and record the actual results.
+1. Deploy the verified multi-operation preview, repeat the failed owner case in production Telegram, inspect logs, and verify Notion still has no new rows.
 2. Provide an exact opening balance anchor and effective date; use one total EUR balance for the MVP.
-3. Supply or approve the remaining examples for the 10-message verification set, including post-factum and reconciliation cases.
-4. Create the remaining Notion views and implement the first verified repository write.
-5. Confirm OpenAI API billing safeguards and finish the 10-message structured parsing verification before enabling the save flow.
-6. Wire the tested EUR converter and running-balance calculation into the confirmed Telegram transaction flow.
-7. Plan the Phase 10 storage approach, but keep implementation of Phases 8–10 parked until the Telegram MVP completes its production smoke test.
+3. Create the remaining Notion views and implement the first verified repository write.
+4. Confirm OpenAI API billing safeguards before enabling the save flow.
+5. Wire the tested EUR converter and running-balance calculation into the confirmed Telegram transaction flow.
+6. Plan the Phase 10 storage approach, but keep implementation of Phases 8–10 parked until the Telegram MVP completes its production smoke test.

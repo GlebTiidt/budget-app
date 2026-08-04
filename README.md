@@ -16,10 +16,10 @@ Personal budget app that will start as a Telegram bot and use Notion for account
 
 ## Planned Flow
 
-1. User sends an expense or income message to Telegram.
+1. User sends one or more expenses, incomes, transfers, or a balance observation to Telegram.
 2. Telegram adapter parses the message into a budget command.
-3. OpenAI turns informal text into a structured draft.
-4. The bot asks the user to confirm or correct the draft.
+3. OpenAI turns informal text into ordered structured drafts and separates balance observations from transactions.
+4. The bot asks the user to confirm or correct every draft independently.
 5. Budget domain validates, converts, and normalizes the transaction.
 6. Notion integration writes the transaction to the selected database.
 7. Bot replies with the saved result and can render category reports through QuickChart.
@@ -33,6 +33,6 @@ npm install
 npm run dev
 ```
 
-The project has verified configuration, structured parsing, chart rendering, and currency-conversion building blocks. The end-to-end Telegram confirmation and Notion write flow is the next implementation milestone.
+The project has verified configuration, multi-operation structured parsing, chart rendering, and currency-conversion building blocks. The end-to-end Telegram confirmation and Notion write flow is the next implementation milestone.
 
 Keep `TELEGRAM_BOT_TOKEN`, `NOTION_API_KEY`, and `OPENAI_API_KEY` in `.env.local` locally and in Vercel environment variables in production. Never commit or paste those values into issues or chat messages.

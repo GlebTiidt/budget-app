@@ -44,6 +44,9 @@ This is the living rules file for the budget app. We update it when decisions be
 - Currency conversion uses Frankfurter v2 without an API key and targets EUR. EUR-to-EUR uses rate `1` without a network request.
 - Request the rate for the transaction date. Accept the API's same-day rate or the latest returned prior rate, but never a rate after the transaction date.
 - Send only the current transaction text and controlled category/account lists to the language model, not the complete budget history.
+- One Telegram text message may produce multiple transaction drafts. Resolve references and later clarifications within that message, but do not send unrelated chat history to the language model.
+- Keep every extracted transaction as an independent draft with its own direction, amount, currency, date, category, account, confidence, and ambiguities.
+- A stated current or remaining balance is a balance observation, not a transaction, and must never be silently converted into income or expense.
 - Timezone defaults to `Asia/Ho_Chi_Minh` unless explicitly changed.
 - The MVP uses the transaction date to request the historical rate and stores the applied rate; it does not expose a separate rate-date property in Notion.
 - The MVP does not store a `Source` property because Telegram is the only input source.
@@ -100,14 +103,14 @@ This is the living rules file for the budget app. We update it when decisions be
 - Never ship Telegram, Notion, OpenAI, Vercel, or currency-provider secrets inside an iOS application bundle.
 - Prefer Apple on-device speech recognition for the future iOS client when the target locale and device support it.
 - Raw voice recordings are deleted after transcription by default and are never written to logs.
+- A multi-operation Telegram text creates multiple drafts, and every draft requires independent validation and confirmation.
 - A daily voice note may create multiple drafts, but every draft requires independent validation and confirmation.
 - Optimize cost by shortening repeated prompts, using structured outputs, and measuring actual usage; do not sacrifice transaction correctness merely to reduce token count.
 
 ## Open Decisions
 
-- The 10 representative Telegram messages used to verify AI parsing.
 - Remaining Notion views and the first idempotent repository write.
-- OpenAI API billing safeguards and live verification against 10 representative messages.
+- OpenAI API billing safeguards.
 - Opening EUR balance and its effective date.
 - Multi-user database provider, owner-Notion versus unified-storage strategy, invitation policy, and OpenAI cost policy.
 
@@ -121,9 +124,10 @@ This is the living rules file for the budget app. We update it when decisions be
 - Notion contains the verified numeric property `Остаток EUR`; no test or real transaction has been written through the application repository yet.
 - The text parser maps employment income to `Работа`, freelance income to `Фриланс`, gym/fitness/pickleball to `Спорт`, and fuel/bike rental to `Транспорт` while retaining the specific purpose in the comment.
 - Frankfurter v2 conversion to EUR is implemented and tested for EUR, VND, USD, and a prior-date fallback. It needs no API key.
-- OpenAI text parsing is implemented, `OPENAI_API_KEY` is configured locally and in Vercel Production/Development, and one live local `gpt-5.6-luna` Responses API parser request has succeeded. The production preview awaits a real Telegram message, and the 10-message verification set remains pending. A ChatGPT subscription is not an API credential.
-- The deployed Telegram preview supports `/start`, `/help`, owner allowlisting, one-operation parsing, and draft confirmation/correction/cancellation UX. Every preview response states that Notion saving is disabled.
-- Local verification passed `npm run typecheck`, `npm test` with 10 tests, and `vercel build --prod`. Vercel reports the Git-backed Production deployment as `Ready`.
+- OpenAI text parsing is implemented, `OPENAI_API_KEY` is configured locally and in Vercel Production/Development, and the local `gpt-5.6-luna` parser passed all 10 representative live cases. A ChatGPT subscription is not an API credential.
+- The local Telegram preview supports `/start`, `/help`, owner allowlisting, multi-operation parsing, separate balance observations, and one independently actionable preview message per draft. Every preview response states that Notion saving is disabled.
+- Production still runs the prior one-operation preview until the verified multi-operation change is deployed and smoke-tested in Telegram.
+- Local verification passed `npm run typecheck`, `npm test` with 18 tests, `npm run test:parser:live` with 10/10 cases, `npm run build`, and `vercel build --prod`. Vercel reports the currently deployed Git-backed Production preview as `Ready`.
 - The remaining immediate verification is the owner's evening smoke test from the `Immediate Test — Production Telegram Preview` section in `docs/checklist.md`. After the test, inspect Vercel logs before marking any user-facing preview behavior verified.
 - Continue strictly from `Current Next Actions` in `docs/checklist.md`.
 - Multi-user storage and isolation planning is captured in Phase 10; implementation remains after the personal Telegram MVP.

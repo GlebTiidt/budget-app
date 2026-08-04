@@ -1,8 +1,14 @@
 import { Bot, InlineKeyboard } from "grammy";
-import { ACCOUNTS, TRANSACTION_CATEGORIES } from "../../budget/catalog.js";
+import {
+  ACCOUNTS,
+  CURRENCIES,
+  TRANSACTION_CATEGORIES
+} from "../../budget/catalog.js";
 import type { AppConfig } from "../../config/loadConfig.js";
 import {
   createOpenAiTransactionParser,
+  type ParsedBalanceObservationDraft,
+  type ParsedBudgetMessageDraft,
   type ParsedTransactionDraft,
   type TransactionTextParser
 } from "../openai/openAiTransactionParser.js";
@@ -41,7 +47,8 @@ export function createTelegramPreviewBot(
       model: config.openaiModel,
       timezone: config.timezone,
       categories: [...TRANSACTION_CATEGORIES],
-      accounts: [...ACCOUNTS]
+      accounts: [...ACCOUNTS],
+      currencies: [...CURRENCIES]
     });
   const bot = new Bot(config.telegramBotToken);
 
@@ -63,10 +70,10 @@ export function createTelegramPreviewBot(
       [
         "Привет! Я тестовая версия бюджетного помощника.",
         "",
-        "Напишите операцию обычным языком, например:",
-        "Сегодня заплатил 120к донгов за кофе по QR.",
+        "Напишите одну или несколько операций обычным языком, например:",
+        "Получил 500 USD за фриланс, потом заплатил 120к донгов за кофе по QR.",
         "",
-        "Я покажу черновик, но пока ничего не запишу в Notion."
+        "Я разделю сообщение на отдельные черновики, но пока ничего не запишу в Notion."
       ].join("\n")
     );
   });
@@ -74,8 +81,8 @@ export function createTelegramPreviewBot(
   bot.command("help", async (ctx) => {
     await ctx.reply(
       [
-        "Сейчас можно тестировать распознавание одной операции.",
-        "Укажите сумму, валюту и назначение; дату и счёт можно написать словами.",
+        "Сейчас можно тестировать распознавание одной или нескольких операций в сообщении.",
+        "Для каждой операции укажите сумму, валюту и назначение; дату и счёт можно написать словами.",
         "",
         "Примеры:",
         "• Вчера продукты 350к VND по QR",
@@ -96,7 +103,9 @@ export function createTelegramPreviewBot(
 
   bot.callbackQuery("preview:correct", async (ctx) => {
     await ctx.answerCallbackQuery();
-    await ctx.reply("✏️ Отправьте исправленную операцию новым сообщением.");
+    await ctx.reply(
+      "✏️ Отправьте исправленное сообщение целиком. Я заново найду в нём все операции."
+    );
   });
 
   bot.callbackQuery("preview:cancel", async (ctx) => {
@@ -108,10 +117,28 @@ export function createTelegramPreviewBot(
     await ctx.replyWithChatAction("typing");
 
     try {
-      const draft = await parser.parse(ctx.message.text);
-      await ctx.reply(formatDraftPreview(draft), {
-        reply_markup: previewKeyboard
-      });
+      const parsed = await parser.parse(ctx.message.text);
+      await ctx.reply(formatBudgetMessageSummary(parsed));
+
+      for (const [index, draft] of parsed.transactions.entries()) {
+        await ctx.reply(
+          formatDraftPreview(draft, {
+            position: index + 1,
+            total: parsed.transactions.length
+          }),
+          { reply_markup: previewKeyboard }
+        );
+      }
+
+      for (const [index, observation] of parsed.balanceObservations.entries()) {
+        await ctx.reply(
+          formatBalanceObservationPreview(observation, {
+            position: index + 1,
+            total: parsed.balanceObservations.length
+          }),
+          { reply_markup: previewKeyboard }
+        );
+      }
     } catch (error: unknown) {
       console.error(
         "Telegram preview parsing failed",
@@ -148,7 +175,52 @@ export function isTelegramUserAllowed(
   return userId !== undefined && allowedUserIds.includes(String(userId));
 }
 
-export function formatDraftPreview(draft: ParsedTransactionDraft): string {
+type PreviewPosition = {
+  position: number;
+  total: number;
+};
+
+export function formatBudgetMessageSummary(parsed: ParsedBudgetMessageDraft): string {
+  const incomeCount = parsed.transactions.filter(
+    (draft) => draft.direction === "income"
+  ).length;
+  const expenseCount = parsed.transactions.filter(
+    (draft) => draft.direction === "expense"
+  ).length;
+  const transferCount = parsed.transactions.filter(
+    (draft) => draft.direction === "transfer"
+  ).length;
+  const ambiguities = parsed.ambiguities.length
+    ? `\n\nПо всему сообщению нужно уточнить:\n${parsed.ambiguities
+        .map((item) => `• ${item}`)
+        .join("\n")}`
+    : "";
+
+  if (parsed.transactions.length === 0 && parsed.balanceObservations.length === 0) {
+    return [
+      "Не нашёл ни одной финансовой операции или наблюдения баланса.",
+      parsed.ambiguities.length
+        ? `\nНужно уточнить:\n${parsed.ambiguities.map((item) => `• ${item}`).join("\n")}`
+        : " Напишите сумму, валюту и назначение точнее.",
+      "\nПока это только тест — в Notion ничего не записано."
+    ].join("");
+  }
+
+  return [
+    `Нашёл транзакций: ${parsed.transactions.length}.`,
+    `Доходы: ${incomeCount} · Расходы: ${expenseCount} · Переводы: ${transferCount}.`,
+    `Наблюдения баланса: ${parsed.balanceObservations.length}.`,
+    "Каждый черновик отправляю отдельно для проверки.",
+    ambiguities
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function formatDraftPreview(
+  draft: ParsedTransactionDraft,
+  position?: PreviewPosition
+): string {
   const direction = {
     expense: "Расход",
     income: "Доход",
@@ -165,9 +237,11 @@ export function formatDraftPreview(draft: ParsedTransactionDraft): string {
     : "";
 
   return [
-    "Проверьте, правильно ли я понял:",
+    position
+      ? `Транзакция ${position.position} из ${position.total} — проверьте:`
+      : "Проверьте, правильно ли я понял:",
     "",
-    `${direction}: ${formatAmount(draft.amount)} ${draft.currency}`,
+    `${direction}: ${formatDraftAmount(draft.amount, draft.currency)}`,
     `Дата: ${formatIsoDate(draft.occurredOn)}`,
     `Категория: ${draft.category ?? "не определена"}`,
     `Счёт: ${draft.account ?? "не указан"}`,
@@ -179,6 +253,53 @@ export function formatDraftPreview(draft: ParsedTransactionDraft): string {
   ]
     .filter((line): line is string => line !== null)
     .join("\n");
+}
+
+export function formatBalanceObservationPreview(
+  observation: ParsedBalanceObservationDraft,
+  position?: PreviewPosition
+): string {
+  const confidence = formatConfidence(observation.confidence);
+  const ambiguities = observation.ambiguities.length
+    ? `\n\nНужно уточнить:\n${observation.ambiguities
+        .map((item) => `• ${item}`)
+        .join("\n")}`
+    : "";
+
+  return [
+    position
+      ? `Наблюдение баланса ${position.position} из ${position.total} — проверьте:`
+      : "Проверьте наблюдение баланса:",
+    "",
+    `Остаток: ${formatAmount(observation.amount)} ${observation.currency}`,
+    `Дата: ${formatIsoDate(observation.occurredOn)}`,
+    `Счёт: ${observation.account ?? "не указан"}`,
+    `Уверенность: ${confidence}${ambiguities}`,
+    "",
+    "Это не доход и не расход.",
+    "Пока это только тестовый черновик — в Notion ничего не записано."
+  ].join("\n");
+}
+
+function formatDraftAmount(amount: number | null, currency: string | null): string {
+  if (amount === null && currency === null) {
+    return "сумма и валюта не указаны";
+  }
+  if (amount === null) {
+    return `сумма не указана, валюта ${currency}`;
+  }
+  if (currency === null) {
+    return `${formatAmount(amount)}, валюта не указана`;
+  }
+  return `${formatAmount(amount)} ${currency}`;
+}
+
+function formatConfidence(confidence: number): string {
+  return confidence >= 0.85
+    ? "высокая"
+    : confidence >= 0.6
+      ? "средняя"
+      : "низкая — лучше уточнить";
 }
 
 function formatAmount(value: number): string {

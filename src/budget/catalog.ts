@@ -26,3 +26,5 @@ export const ACCOUNTS = [
   "Сбережения",
   "Вьетнамский счёт"
 ] as const;
+
+export const CURRENCIES = ["USD", "RUB", "VND", "AUD", "EUR"] as const;
