@@ -31,11 +31,13 @@ This is the living rules file for the budget app. We update it when decisions be
 - A new category is added to the Notion `Категория` select only after the user confirms it in Telegram; never create categories silently.
 - Category matching is case-insensitive and must reject aliases or near-duplicates of an existing category.
 - When updating Notion select options, preserve every existing option and append the confirmed new option because omitted options may be removed by the API.
-- Save the normalized description to Notion. Store raw Telegram text only if the user explicitly enables it for audit.
+- Save the normalized description to Notion. The personal MVP discards raw Telegram transaction text after the normalized draft is confirmed.
 - AI parsing must return structured data and must never write directly to Notion.
 - A parsed transaction requires user confirmation before it is saved.
 - Currency conversion and report totals are calculated by application code, not by the language model.
 - The opening balance is a controlled EUR setting with an effective date; it is not recorded as a fake income transaction.
+- The personal MVP tracks one total EUR balance rather than separate per-account balances.
+- Transfers between personal accounts are excluded from the first version.
 - Every confirmed transaction stores `Остаток EUR`, the running balance immediately after that operation.
 - For the total balance, income adds the converted EUR amount, expense subtracts it, and transfers between personal accounts do not change it.
 - Backdated inserts, corrections, and deletions require recalculation of every later running balance in deterministic date/order sequence.
@@ -46,8 +48,13 @@ This is the living rules file for the budget app. We update it when decisions be
 - The MVP uses the transaction date to request the historical rate and stores the applied rate; it does not expose a separate rate-date property in Notion.
 - The MVP does not store a `Source` property because Telegram is the only input source.
 - The MVP relies on Notion's built-in page creation metadata instead of a visible `Created` property.
-- The current account list is `Наличные`, `Карта`, and `Сбережения`.
+- The current account list is `Наличные`, `Карта`, `Сбережения`, and `Вьетнамский счёт`.
+- Vietnamese QR payments use `Вьетнамский счёт`; `Наличные` is reserved for physical cash.
 - The current currency list is `USD`, `RUB`, `VND`, `AUD`, and `EUR`.
+- A user may report an observed current balance for a named account in a supported currency. The application converts that observation to EUR for comparison with the calculated balance but does not store it as income or expense. Account-specific reconciliation does not change the MVP decision to report one total EUR balance.
+- When an observed balance is below the calculated balance, the bot starts a reconciliation conversation in plain, non-judgmental language, states the difference, and invites the user to recall missing expenses.
+- Reconciliation may produce one or more post-factum drafts. Every draft requires normal validation and independent confirmation, and the bot shows the remaining unexplained difference after each confirmed expense.
+- The bot must never invent a missing expense or silently create a balancing adjustment. The user may stop reconciliation with an unresolved difference.
 
 ## Telegram Rules
 
@@ -89,12 +96,10 @@ This is the living rules file for the budget app. We update it when decisions be
 
 ## Open Decisions
 
-- Whether transfers between personal accounts are included in the MVP.
-- Whether raw Telegram input is retained for audit or discarded after confirmation.
 - The 10 representative Telegram messages used to verify AI parsing.
 - Remaining Notion views and the first idempotent repository write.
-- OpenAI API billing/key setup and live parser verification.
-- Opening EUR balance, its effective date, and whether balances are total-only or separated by account.
+- OpenAI API billing safeguards, Vercel key setup, and live verification against 10 representative messages.
+- Opening EUR balance and its effective date.
 - Multi-user database provider, owner-Notion versus unified-storage strategy, invitation policy, and OpenAI cost policy.
 
 ## Session Handoff — 2026-07-18
@@ -102,8 +107,9 @@ This is the living rules file for the budget app. We update it when decisions be
 - GitHub and Vercel are connected, and the latest production deployment was previously verified as `Ready`.
 - Telegram and Notion credentials are configured locally and as encrypted Vercel Production/Development variables. Preview variables are not configured yet.
 - Notion `Категория` contains `Фриланс`, `Работа`, and `Спорт`; `Транспорт` remains the category for both fuel and bike rental.
+- Notion `Счёт` contains `Вьетнамский счёт`; Vietnamese QR payments use that account rather than `Наличные`.
 - The text parser maps employment income to `Работа`, freelance income to `Фриланс`, gym/fitness/pickleball to `Спорт`, and fuel/bike rental to `Транспорт` while retaining the specific purpose in the comment.
 - Frankfurter v2 conversion to EUR is implemented and tested for EUR, VND, USD, and a prior-date fallback. It needs no API key.
-- OpenAI text parsing is implemented but cannot be tested live until `OPENAI_API_KEY` is added locally and in Vercel. A ChatGPT subscription is not an API credential.
+- OpenAI text parsing is implemented, the local `OPENAI_API_KEY` is configured, and one live `gpt-5.6-luna` Responses API parser request has succeeded. Vercel key setup and the 10-message verification set remain pending. A ChatGPT subscription is not an API credential.
 - Continue strictly from `Current Next Actions` in `docs/checklist.md`.
 - Multi-user storage and isolation planning is captured in Phase 10; implementation remains after the personal Telegram MVP.

@@ -16,6 +16,7 @@ This file is the single source of truth for project progress. A checked item mus
 - [x] Telegram remains the MVP client; a native iOS app is a later client of the same budget backend.
 - [x] The future iOS client will be built in Xcode with SwiftUI and its own design system.
 - [x] Voice input is a future feature, with on-device Apple transcription preferred when available.
+- [x] A balance mismatch starts a human-language reconciliation flow for post-factum expenses; the app never invents a balancing transaction.
 
 ## Phase 0 — Accounts and Infrastructure
 
@@ -38,12 +39,12 @@ Exit condition: the bot token and owner allowlist are configured in both environ
 - [x] Confirm the initial expense categories: `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, `Другое`, `Кофешоп`, `Еда вне дома`, and `Спорт`.
 - [x] Confirm income categories: `Фриланс` and `Работа`.
 - [x] Treat fuel and bike rental as `Транспорт`; preserve `Бензин` and `Аренда байка` in the comment instead of creating categories.
-- [x] Confirm the initial accounts: `Наличные`, `Карта`, and `Сбережения`.
+- [x] Confirm the accounts: `Наличные`, `Карта`, `Сбережения`, and `Вьетнамский счёт`; Vietnamese QR payments use `Вьетнамский счёт`.
 - [ ] Enter the opening total balance in EUR and the date from which balance tracking begins.
-- [ ] Decide whether the MVP tracks one total EUR balance or separate balances for each account.
-- [ ] Decide whether transfers between personal accounts are included in the first version.
+- [x] Track one total EUR balance in the MVP rather than separate per-account balances.
+- [x] Exclude transfers between personal accounts from the first version.
 - [ ] Provide 10 representative Telegram transaction messages, including slang and abbreviations.
-- [ ] Decide whether raw Telegram text is stored privately for audit or discarded after confirmation.
+- [x] Discard raw Telegram text after the normalized transaction is confirmed.
 
 Exit condition: currencies, categories, accounts, opening-balance policy, transfer policy, examples, and raw-text policy are documented.
 
@@ -51,8 +52,9 @@ Exit condition: currencies, categories, accounts, opening-balance policy, transf
 
 - [x] Create the `Транзакции` database in Notion and verify API access.
 - [x] Add and verify the MVP schema: `Операция`, `Дата`, `Тип`, `Исходная сумма`, `Валюта`, `Курс к EUR`, `Сумма EUR`, `Категория`, `Счёт`, `Комментарий`, and `Telegram ID`.
-- [ ] Add and verify the number property `Остаток EUR` containing the running balance after each transaction.
+- [x] Add and verify the number property `Остаток EUR` containing the running balance after each transaction.
 - [ ] Store the opening EUR balance and its effective date in a single controlled settings location, not as an ordinary expense or income.
+- [ ] Store confirmed balance observations separately from transactions so reconciliation never fabricates income or expense.
 - [ ] Create month, category, income, and expense views.
 - [x] Create a private Notion integration with read, insert, and update content access; verify its token with Notion `users/me`.
 - [x] Share the `Личный бюджет` page and nested `Транзакции` database with that integration; verify read access.
@@ -69,9 +71,11 @@ Exit condition: one verified transaction can be written exactly once through the
 - [x] Add the official OpenAI JavaScript SDK.
 - [x] Add a structured-output parser for amount, currency, direction, date, category, account, description, confidence, and ambiguities.
 - [x] Prevent the parser from writing directly to Notion.
-- [ ] Create or open an OpenAI API Platform account and enable API billing.
-- [ ] Create a project API key; do not reuse or expose ChatGPT credentials.
-- [ ] Add `OPENAI_API_KEY` locally and in Vercel.
+- [x] Create or open an OpenAI API Platform account.
+- [ ] Enable API billing and set a project budget or usage alert.
+- [x] Create a project API key; do not reuse or expose ChatGPT credentials.
+- [x] Add `OPENAI_API_KEY` locally and verify it with a live Responses API parser request.
+- [ ] Add `OPENAI_API_KEY` to Vercel Production and Development.
 - [ ] Test the parser against the 10 representative messages.
 - [ ] Add deterministic fallback/error messages for incomplete or ambiguous input.
 - [ ] Implement Confirm, Correct, and Cancel actions in Telegram.
@@ -104,6 +108,9 @@ Exit condition: tested conversions are deterministic and retain all audit fields
 - [ ] Save the confirmed transaction to Notion.
 - [ ] Prevent duplicate writes using the Telegram message ID.
 - [ ] Return a concise receipt containing original amount, EUR amount, remaining EUR balance, category, account, and date.
+- [ ] Accept an observed current balance for a named account in a supported currency and compare its converted EUR value with the calculated balance.
+- [ ] When the observed balance is lower, explain the difference conversationally and collect one or more post-factum expense drafts.
+- [ ] Require independent confirmation for every recalled expense, show the remaining unexplained difference, and allow the user to stop without inventing an adjustment.
 
 Exit condition: one real Telegram message completes the full confirmed path into Notion exactly once.
 
@@ -167,6 +174,8 @@ Exit condition: voice capture is private, measurable, and every extracted transa
 
 ## Phase 10 — Multi-User Bot and Private Storage (Future)
 
+Detailed future category UX is captured in [`docs/ideas-checklist.md`](ideas-checklist.md); this file remains the source of truth for delivery status.
+
 - [ ] Decide whether access is invite-only, owner-approved, or open registration; implement access grant and revocation.
 - [ ] Keep the owner's existing Notion workspace private and confirm that no other user's transactions are written there.
 - [ ] Compare a managed relational database with per-user Notion integrations; explicitly reject local text/JSON files as persistent Vercel storage.
@@ -174,7 +183,13 @@ Exit condition: voice capture is private, measurable, and every extracted transa
 - [ ] Decide whether the owner continues using Notion while other users use the database, or whether all users eventually move to one backend.
 - [ ] Design user-scoped records for profiles, transactions, categories, accounts, opening balances, preferences, and Telegram identities.
 - [ ] Enforce data isolation in every query and database constraint so one Telegram user can never read or modify another user's budget.
-- [ ] Seed default categories for a new user and allow that user to create, rename, merge, and archive only their own categories.
+- [ ] Let each new user choose an initial category set during onboarding, with an optional recommended starter set.
+- [ ] Allow a user to create a missing category by Telegram message or from a proposed-new-category draft, always with explicit confirmation.
+- [ ] Allow each user to create, rename, merge, and archive only their own categories.
+- [ ] At 15 active categories, show a non-blocking consolidation suggestion with `Посмотреть похожие`, `Оставить как есть`, and `Напомнить позже` choices.
+- [ ] Implement safe category merging with an impact preview, explicit confirmation, historical reassignment, source archival, an audit trail, and strict user isolation.
+- [ ] Add owner-only Telegram commands `/idea` and `/ideas` backed by repository-scoped GitHub Issues, with confirmation, duplicate detection, and no direct commits to the default branch.
+- [ ] Add a controlled workflow for promoting an accepted Telegram idea into [`docs/ideas-checklist.md`](ideas-checklist.md).
 - [ ] Add per-user base currency, timezone, accounts, opening balance, and report settings.
 - [ ] Define whether OpenAI usage is owner-funded, quota-limited, or paid by each user; add abuse and spending limits before invitations expand.
 - [ ] Add onboarding, privacy notice, data export, account deletion, and full access-revocation flows.
@@ -186,10 +201,10 @@ Exit condition: an invited user has an isolated budget and custom categories wit
 
 ## Current Next Actions
 
-1. Provide the opening EUR balance and effective date; decide whether the balance is total or per account.
+1. Provide an exact opening balance anchor and effective date; use one total EUR balance for the MVP.
 2. Plan the Phase 10 storage approach: personal Notion for the owner versus a separate managed database for invited users.
-3. Decide transfer handling and raw-text retention; supply 10 representative Telegram messages.
+3. Supply or approve 10 representative Telegram messages, including post-factum and reconciliation examples.
 4. Add `Остаток EUR`, create the remaining Notion views, and implement the first verified repository write.
-5. Create and add the OpenAI API key, then test structured parsing before wiring the full Telegram flow.
+5. Confirm OpenAI API billing safeguards, add the key to Vercel, and test structured parsing against 10 representative messages before wiring the full Telegram flow.
 6. Wire the tested EUR converter and running-balance calculation into the confirmed Telegram transaction flow.
 7. Keep implementation of Phases 8–10 parked until the Telegram MVP completes its production smoke test.
