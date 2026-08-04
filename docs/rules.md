@@ -45,6 +45,7 @@ This is the living rules file for the budget app. We update it when decisions be
 - Request the rate for the transaction date. Accept the API's same-day rate or the latest returned prior rate, but never a rate after the transaction date.
 - Send only the current transaction text and controlled category/account lists to the language model, not the complete budget history.
 - One Telegram text message may produce multiple transaction drafts. Resolve references and later clarifications within that message, but do not send unrelated chat history to the language model.
+- A preview correction may send only the normalized current preview and the user's direct reply to the language model; never include unrelated messages or raw history.
 - Keep every extracted transaction as an independent draft with its own direction, amount, currency, date, category, account, confidence, and ambiguities.
 - A stated current or remaining balance is a balance observation, not a transaction, and must never be silently converted into income or expense.
 - Timezone defaults to `Asia/Ho_Chi_Minh` unless explicitly changed.
@@ -64,15 +65,15 @@ This is the living rules file for the budget app. We update it when decisions be
 - Only allow configured Telegram user IDs.
 - Bot replies must be short and action-oriented.
 - Parsing failures should ask for a corrected message instead of silently guessing.
-- Show all drafts and balance observations from one user message in one numbered Telegram preview while keeping per-item controls.
+- Show all drafts and balance observations from one user message in one numbered Telegram preview and manage it through a normal text reply, without an inline button grid.
 - Collect missing amount, currency, category, account, and other ambiguities into one numbered clarification block instead of sending separate prompts.
 - Destructive actions must require explicit confirmation.
 
 ### Parser Preview Mode
 
 - The deployed preview is owner-only and exists to test Telegram delivery, language, parsing quality, and draft controls before enabling financial writes.
-- Every preview draft and callback response must state that nothing was written to Notion.
-- `Верно`, `Исправить`, and `Отмена` exercise preview UX only; they must not call currency conversion or any repository write.
+- Every preview draft and action response must state that nothing was written to Notion.
+- Reply actions such as `всё верно`, field corrections, and `отмени 4` exercise preview UX only; they must not call currency conversion or any repository write.
 - Committed tests and fixtures must use synthetic examples and must never contain credentials, API keys, personal identifiers, or real financial history.
 - Application logs must not contain raw Telegram transaction text. An exact user phrase may be used transiently for debugging only and must be removed after a synthetic regression case reproduces it.
 - Do not mark the full Telegram transaction flow complete until one real Telegram message passes confirmation, conversion, an idempotent Notion write, and a verified receipt.

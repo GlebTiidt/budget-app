@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadConfig } from "../../../src/config/loadConfig.js";
 import type {
+  ParsedBudgetMessageDraft,
   ParsedTransactionDraft,
   TransactionTextParser
 } from "../../../src/integrations/openai/openAiTransactionParser.js";
@@ -111,19 +112,40 @@ test("keeps a maximum-size batch inside one Telegram message", () => {
   assert.match(preview, /Preview: в Notion ничего не записано\.$/);
 });
 
-test("Telegram sends one combined message with independently actionable rows", async () => {
+test("Telegram revises a combined preview from a normal text reply", async () => {
+  const initialParsed: ParsedBudgetMessageDraft = {
+    transactions: [createDraft("income"), createDraft("expense")],
+    balanceObservations: [
+      {
+        amount: 20_000,
+        currency: "VND",
+        occurredOn: "2026-08-04",
+        account: null,
+        confidence: 0.7,
+        ambiguities: ["Не указан счёт"]
+      }
+    ],
+    ambiguities: []
+  };
+  const revisionCalls: Array<{ preview: string; instruction: string }> = [];
   const parser: TransactionTextParser = {
     async parse() {
+      return initialParsed;
+    },
+    async revise(preview, instruction) {
+      revisionCalls.push({ preview, instruction });
       return {
-        transactions: [createDraft("income"), createDraft("expense")],
+        transactions: [
+          {
+            ...initialParsed.transactions[0]!,
+            account: "Карта"
+          }
+        ],
         balanceObservations: [
           {
-            amount: 20_000,
-            currency: "VND",
-            occurredOn: "2026-08-04",
-            account: null,
-            confidence: 0.7,
-            ambiguities: ["Не указан счёт"]
+            ...initialParsed.balanceObservations[0]!,
+            account: "Карта",
+            ambiguities: []
           }
         ],
         ambiguities: []
@@ -200,36 +222,111 @@ test("Telegram sends one combined message with independently actionable rows", a
   assert.match(String(sentMessages[0]?.text), /Б1\./);
 
   const replyMarkup = sentMessages[0]?.reply_markup as {
-    inline_keyboard: Array<Array<{ callback_data: string; text: string }>>;
+    force_reply: boolean;
+    input_field_placeholder: string;
   };
-  assert.equal(replyMarkup.inline_keyboard.length, 3);
-  assert.equal(
-    replyMarkup.inline_keyboard[1]?.[1]?.callback_data,
-    "preview:correct:transaction:2"
-  );
+  assert.equal(replyMarkup.force_reply, true);
+  assert.match(replyMarkup.input_field_placeholder, /для всех счёт Карта/);
 
   await bot.handleUpdate({
     update_id: 2,
-    callback_query: {
-      id: "callback-1",
+    message: {
+      message_id: 11,
+      date: 1_775_290_701,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
       from: {
         id: 100001,
         is_bot: false,
         first_name: "Owner"
       },
-      chat_instance: "test-chat-instance",
-      data: "preview:correct:transaction:2",
-      message: {
+      text: "Для всех счёт Карта; отмени 2",
+      reply_to_message: {
         message_id: 1,
         date: 1_775_290_700,
         chat: { id: 100001, type: "private", first_name: "Owner" },
-        text: String(sentMessages[0]?.text)
+        from: {
+          id: 123456,
+          is_bot: true,
+          first_name: "Budget Test Bot",
+          username: "budget_test_bot"
+        },
+        text: String(sentMessages[0]?.text),
+        reply_to_message: undefined
       }
     }
   });
 
   assert.equal(sentMessages.length, 2);
-  assert.match(String(sentMessages[1]?.text), /исправленный текст.*Транзакция №2/);
+  assert.equal(revisionCalls.length, 1);
+  assert.match(revisionCalls[0]!.preview, /Preview: в Notion ничего не записано/);
+  assert.equal(revisionCalls[0]!.instruction, "Для всех счёт Карта; отмени 2");
+  assert.match(String(sentMessages[1]?.text), /1\. Доход.*Карта/);
+  assert.doesNotMatch(String(sentMessages[1]?.text), /2\. Расход/);
+  assert.match(String(sentMessages[1]?.text), /Б1\..*Карта/);
+
+  await bot.handleUpdate({
+    update_id: 3,
+    message: {
+      message_id: 12,
+      date: 1_775_290_702,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: {
+        id: 100001,
+        is_bot: false,
+        first_name: "Owner"
+      },
+      text: "Всё верно",
+      reply_to_message: {
+        message_id: 2,
+        date: 1_775_290_701,
+        chat: { id: 100001, type: "private", first_name: "Owner" },
+        from: {
+          id: 123456,
+          is_bot: true,
+          first_name: "Budget Test Bot",
+          username: "budget_test_bot"
+        },
+        text: String(sentMessages[1]?.text),
+        reply_to_message: undefined
+      }
+    }
+  });
+
+  assert.equal(sentMessages.length, 3);
+  assert.equal(revisionCalls.length, 1, "confirmation should not call OpenAI again");
+  assert.match(String(sentMessages[2]?.text), /Все пункты проверены/);
+
+  await bot.handleUpdate({
+    update_id: 4,
+    message: {
+      message_id: 13,
+      date: 1_775_290_703,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: {
+        id: 100001,
+        is_bot: false,
+        first_name: "Owner"
+      },
+      text: "Отмени всё",
+      reply_to_message: {
+        message_id: 1,
+        date: 1_775_290_700,
+        chat: { id: 100001, type: "private", first_name: "Owner" },
+        from: {
+          id: 123456,
+          is_bot: true,
+          first_name: "Budget Test Bot",
+          username: "budget_test_bot"
+        },
+        text: String(sentMessages[0]?.text),
+        reply_to_message: undefined
+      }
+    }
+  });
+
+  assert.equal(sentMessages.length, 4);
+  assert.equal(revisionCalls.length, 1, "whole cancellation should be deterministic");
+  assert.match(String(sentMessages[3]?.text), /Весь черновик отменён/);
 });
 
 function createDraft(

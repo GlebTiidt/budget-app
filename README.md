@@ -17,7 +17,7 @@ Personal budget app with an owner-only Telegram parser preview and a planned con
 1. User sends one or more expenses, incomes, transfers, or a balance observation to Telegram.
 2. Telegram adapter parses the message into a budget command.
 3. OpenAI turns informal text into ordered structured drafts and separates balance observations from transactions.
-4. The bot shows every numbered draft in one message, asks for missing fields, and keeps confirmation or correction controls per item.
+4. The bot shows every numbered draft in one message, asks for missing fields, and accepts confirmation, correction, or cancellation as a normal text reply.
 5. Budget domain validates, converts, and normalizes the transaction.
 6. Notion integration writes the transaction to the selected database.
 7. Bot replies with the saved result and can render category reports through QuickChart.

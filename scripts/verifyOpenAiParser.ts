@@ -5,6 +5,7 @@ import {
   type ParsedBudgetMessageDraft,
   type ParsedTransactionDraft
 } from "../src/integrations/openai/openAiTransactionParser.js";
+import { formatBudgetMessagePreview } from "../src/integrations/telegram/telegramBot.js";
 
 type DirectionCounts = {
   expense: number;
@@ -152,9 +153,13 @@ const parser = createOpenAiTransactionParser({
 });
 
 let passed = 0;
+let revisionSource: ParsedBudgetMessageDraft | undefined;
 
 for (const [index, verificationCase] of verificationCases.entries()) {
   const parsed = await parser.parse(verificationCase.input, fixedNow);
+  if (index === 0) {
+    revisionSource = parsed;
+  }
   const errors = verifyResult(parsed, verificationCase);
   const counts = countDirections(parsed);
   const status = errors.length === 0 ? "PASS" : "FAIL";
@@ -183,7 +188,29 @@ for (const [index, verificationCase] of verificationCases.entries()) {
 
 console.log(`Live parser verification: ${passed}/${verificationCases.length} passed.`);
 
-if (passed !== verificationCases.length) {
+let revisionPassed = false;
+if (revisionSource) {
+  const revised = await parser.revise(
+    formatBudgetMessagePreview(revisionSource),
+    "Для всех счёт Вьетнамский счёт; отмени транзакцию 4",
+    fixedNow
+  );
+  revisionPassed =
+    revised.transactions.length === 4 &&
+    !revised.transactions.some((item) => item.amount === 420_000) &&
+    revised.transactions.every((item) => item.account === "Вьетнамский счёт") &&
+    revised.balanceObservations.length === 1 &&
+    revised.balanceObservations.every(
+      (item) => item.account === "Вьетнамский счёт"
+    );
+  console.log(
+    `Live reply revision: ${revisionPassed ? "PASS" : "FAIL"} — ` +
+      `transactions=${revised.transactions.length}, ` +
+      `balances=${revised.balanceObservations.length}`
+  );
+}
+
+if (passed !== verificationCases.length || !revisionPassed) {
   process.exitCode = 1;
 }
 

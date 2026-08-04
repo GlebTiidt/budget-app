@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot } from "grammy";
 import {
   ACCOUNTS,
   CURRENCIES,
@@ -27,6 +27,11 @@ type PreviewItemKind = "transaction" | "balance";
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 const PREVIEW_WARNING = "Preview: в Notion ничего не записано.";
+const previewReplyMarkup = {
+  force_reply: true as const,
+  selective: true,
+  input_field_placeholder: "Например: для всех счёт Карта"
+};
 
 export function createTelegramPreviewBot(
   config: AppConfig,
@@ -151,16 +156,50 @@ export function createTelegramPreviewBot(
     await ctx.replyWithChatAction("typing");
 
     try {
+      const repliedPreview = getRepliedPreviewText(ctx.message.reply_to_message);
+      if (repliedPreview) {
+        const instruction = ctx.message.text.trim();
+
+        if (isWholePreviewConfirmation(instruction)) {
+          await ctx.reply(
+            "✅ Все пункты проверены. Это preview — в Notion ничего не записано."
+          );
+          return;
+        }
+
+        if (isWholePreviewCancellation(instruction)) {
+          await ctx.reply(
+            "✖️ Весь черновик отменён. В Notion ничего не записано."
+          );
+          return;
+        }
+
+        try {
+          const revised = await parser.revise(repliedPreview, instruction);
+          await ctx.reply(formatBudgetMessagePreview(revised), {
+            reply_markup: previewReplyMarkup
+          });
+        } catch (error: unknown) {
+          console.error(
+            "Telegram preview revision failed",
+            error instanceof Error ? error.message : "unknown error"
+          );
+          await ctx.reply(
+            [
+              "Не понял, как изменить черновик.",
+              "Ответьте на исходный preview, например: «для всех счёт Карта», «3: валюта USD» или «отмени 4»."
+            ].join("\n")
+          );
+        }
+        return;
+      }
+
       const parsed = await parser.parse(ctx.message.text);
       const preview = formatBudgetMessagePreview(parsed);
 
-      if (parsed.transactions.length || parsed.balanceObservations.length) {
-        await ctx.reply(preview, {
-          reply_markup: createBudgetPreviewKeyboard(parsed)
-        });
-      } else {
-        await ctx.reply(preview);
-      }
+      await ctx.reply(preview, {
+        reply_markup: previewReplyMarkup
+      });
     } catch (error: unknown) {
       console.error(
         "Telegram preview parsing failed",
@@ -220,31 +259,6 @@ export function formatBudgetMessagePreview(parsed: ParsedBudgetMessageDraft): st
   return limitTelegramMessage(buildBudgetMessagePreview(parsed, false));
 }
 
-export function createBudgetPreviewKeyboard(
-  parsed: ParsedBudgetMessageDraft
-): InlineKeyboard {
-  const keyboard = new InlineKeyboard();
-  let hasPreviousRow = false;
-
-  for (const [index] of parsed.transactions.entries()) {
-    if (hasPreviousRow) {
-      keyboard.row();
-    }
-    addPreviewKeyboardRow(keyboard, String(index + 1), "transaction", index + 1);
-    hasPreviousRow = true;
-  }
-
-  for (const [index] of parsed.balanceObservations.entries()) {
-    if (hasPreviousRow) {
-      keyboard.row();
-    }
-    addPreviewKeyboardRow(keyboard, `Б${index + 1}`, "balance", index + 1);
-    hasPreviousRow = true;
-  }
-
-  return keyboard;
-}
-
 function buildBudgetMessagePreview(
   parsed: ParsedBudgetMessageDraft,
   includeDetails: boolean
@@ -281,7 +295,14 @@ function buildBudgetMessagePreview(
   }
 
   sections.push(
-    "Кнопки ниже относятся к номерам транзакций; «Б» означает наблюдение баланса.",
+    [
+      "Ответьте на это сообщение обычным текстом, например:",
+      "• всё верно",
+      "• для всех счёт Вьетнамский счёт",
+      "• 2: счёт Карта; 3: валюта USD",
+      "• отмени 4",
+      "«Б» означает наблюдение баланса."
+    ].join("\n"),
     PREVIEW_WARNING
   );
 
@@ -396,18 +417,6 @@ function collectClarificationRequests(
   return requests;
 }
 
-function addPreviewKeyboardRow(
-  keyboard: InlineKeyboard,
-  label: string,
-  kind: PreviewItemKind,
-  position: number
-): void {
-  keyboard
-    .text(`✅ ${label}`, `preview:confirm:${kind}:${position}`)
-    .text(`✏️ ${label}`, `preview:correct:${kind}:${position}`)
-    .text(`✖️ ${label}`, `preview:cancel:${kind}:${position}`);
-}
-
 function formatDraftAmount(amount: number | null, currency: string | null): string {
   if (amount === null && currency === null) {
     return "сумма и валюта не указаны";
@@ -460,4 +469,29 @@ function limitTelegramMessage(value: string): string {
 
   const suffix = `\n\n… Часть длинных деталей сокращена.\n${PREVIEW_WARNING}`;
   return `${value.slice(0, TELEGRAM_MESSAGE_LIMIT - suffix.length).trimEnd()}${suffix}`;
+}
+
+function getRepliedPreviewText(
+  replyToMessage:
+    | { text?: string; from?: { is_bot: boolean } }
+    | undefined
+): string | null {
+  if (!replyToMessage?.from?.is_bot || !replyToMessage.text) {
+    return null;
+  }
+  return replyToMessage.text.includes(PREVIEW_WARNING)
+    ? replyToMessage.text
+    : null;
+}
+
+function isWholePreviewConfirmation(value: string): boolean {
+  return /^(вс[её]\s+верно|верно|подтверждаю|подтвердить)[.!]?$/i.test(
+    value.trim()
+  );
+}
+
+function isWholePreviewCancellation(value: string): boolean {
+  return /^(отмени(ть)?\s+вс[её]|отмена\s+всего|вс[её]\s+отмени(ть)?)[.!]?$/i.test(
+    value.trim()
+  );
 }
