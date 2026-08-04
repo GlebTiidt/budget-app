@@ -117,7 +117,7 @@ This is the living rules file for the budget app. We update it when decisions be
 ## Session Handoff — 2026-08-04
 
 - GitHub and Vercel are connected. The owner-only Telegram parser preview is deployed to Vercel Production, its health endpoint is verified, and Telegram reports the production webhook with no error or pending update.
-- The preview implementation was introduced in commit `4ab09b1` (`Deploy owner-only Telegram parser preview`). The stable health URL is `https://budget-app-vert-one.vercel.app/api/telegram`, and the Telegram entrypoint is `https://t.me/budgetgleb_bot`.
+- The preview implementation was introduced in commit `4ab09b1` (`Deploy owner-only Telegram parser preview`), and multi-operation preview support was added in commit `fadcfe1` (`Support multi-operation Telegram previews`). The stable health URL is `https://budget-app-vert-one.vercel.app/api/telegram`, and the Telegram entrypoint is `https://t.me/budgetgleb_bot`.
 - Telegram and Notion credentials are configured locally and as encrypted Vercel Production/Development variables. Preview variables are not configured yet.
 - Notion `Категория` contains `Фриланс`, `Работа`, and `Спорт`; `Транспорт` remains the category for both fuel and bike rental.
 - Notion `Счёт` contains `Вьетнамский счёт`; Vietnamese QR payments use that account rather than `Наличные`.
@@ -126,8 +126,8 @@ This is the living rules file for the budget app. We update it when decisions be
 - Frankfurter v2 conversion to EUR is implemented and tested for EUR, VND, USD, and a prior-date fallback. It needs no API key.
 - OpenAI text parsing is implemented, `OPENAI_API_KEY` is configured locally and in Vercel Production/Development, and the local `gpt-5.6-luna` parser passed all 10 representative live cases. A ChatGPT subscription is not an API credential.
 - The local Telegram preview supports `/start`, `/help`, owner allowlisting, multi-operation parsing, separate balance observations, and one independently actionable preview message per draft. Every preview response states that Notion saving is disabled.
-- Production still runs the prior one-operation preview until the verified multi-operation change is deployed and smoke-tested in Telegram.
-- Local verification passed `npm run typecheck`, `npm test` with 18 tests, `npm run test:parser:live` with 10/10 cases, `npm run build`, and `vercel build --prod`. Vercel reports the currently deployed Git-backed Production preview as `Ready`.
-- The remaining immediate verification is the owner's evening smoke test from the `Immediate Test — Production Telegram Preview` section in `docs/checklist.md`. After the test, inspect Vercel logs before marking any user-facing preview behavior verified.
+- Production deployment `dpl_7Hms4DuHM9ni5FQd28wMETddPn9j` now runs the multi-operation preview and is `Ready`; the stable health endpoint returns HTTP `200`, and Telegram reports the expected webhook with no error or pending update. The owner smoke test of the new behavior is still pending.
+- Local verification passed `npm run typecheck`, `npm test` with 18 tests, `npm run test:parser:live` with 10/10 cases, `npm run build`, and `vercel build --prod`. Vercel reports the current Production preview as `Ready`.
+- The remaining immediate verification is the owner's smoke test from the `Immediate Test — Production Telegram Preview` section in `docs/checklist.md`, including the previously failed multi-operation message. After the test, inspect Vercel logs before marking any user-facing preview behavior verified.
 - Continue strictly from `Current Next Actions` in `docs/checklist.md`.
 - Multi-user storage and isolation planning is captured in Phase 10; implementation remains after the personal Telegram MVP.

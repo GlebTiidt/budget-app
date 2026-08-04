@@ -237,7 +237,8 @@ This smoke test validates only the safe parser preview. It must not create or up
 - [x] Preserve an amount-less salary-advance mention as an incomplete income draft while independently extracting the `50 000 VND` fuel expense.
 - [x] Verify each parsed item is sent as a separate Telegram preview with its own controls.
 - [x] Run `npm run typecheck`, `npm test` (18 passing tests), `npm run test:parser:live` (10/10 live cases), `npm run build`, and `vercel build --prod`.
-- [ ] Deploy the multi-operation preview and repeat the failed owner case in production Telegram.
+- [x] Deploy the multi-operation preview to Vercel Production; deployment `dpl_7Hms4DuHM9ni5FQd28wMETddPn9j` reached `Ready` on 2026-08-04 and the stable health endpoint returned HTTP `200`.
+- [ ] Repeat the failed owner case in production Telegram.
 
 ### Follow-up After the Owner Test
 
@@ -248,7 +249,7 @@ This smoke test validates only the safe parser preview. It must not create or up
 
 ## Current Next Actions
 
-1. Deploy the verified multi-operation preview, repeat the failed owner case in production Telegram, inspect logs, and verify Notion still has no new rows.
+1. Complete the owner production Telegram smoke test, repeat the failed multi-operation case, inspect webhook/OpenAI logs, and verify Notion still has no new rows.
 2. Provide an exact opening balance anchor and effective date; use one total EUR balance for the MVP.
 3. Create the remaining Notion views and implement the first verified repository write.
 4. Confirm OpenAI API billing safeguards before enabling the save flow.
