@@ -46,6 +46,13 @@ This is the living rules file for the budget app. We update it when decisions be
 - Request the rate for the transaction date. Accept the API's same-day rate or the latest returned prior rate, but never a rate after the transaction date.
 - Send only the current transaction text and controlled category/account lists to the language model, not the complete budget history.
 - Serialize structured OpenAI input context with the official TOON encoder. Keep strict JSON Schema Structured Outputs as the validated response contract.
+- Keep reusable OpenAI instructions before changing TOON input, state each rule once, and rerun the representative live parser suite after changing a prompt or reasoning setting.
+- Use `reasoning.effort: none` for the GPT-5.6 budget parser while the full live suite remains green; raise it only for a measured correctness regression.
+- Use `text.verbosity: low`, an `8,000`-token response ceiling, and bounded Structured Output strings for the GPT-5.6 budget parser. Change these limits only after the maximum-size structured response and live parser suite still pass.
+- Keep the parser cache key `budget-parse-toon-v1` and revision cache key `budget-revise-toon-v1` separate, with an explicit breakpoint after reusable developer instructions and before changing TOON data. Bump the key version when the reusable prompt contract changes materially.
+- The current verified token baseline is 13 live requests: all 11 parser cases and both reply revisions passed with both `low` and `none`; `none` reduced total usage from `17,312` to `15,768` tokens (`-8.9%`). Treat this as a regression baseline, not a universal saving; full measurements and research decisions live in [`docs/token-optimization.md`](token-optimization.md).
+- Log OpenAI input, cache-read, cache-write, output, reasoning, and total token counts without logging prompt or response content.
+- Never add filler solely to cross the prompt-cache minimum. A shorter uncached prompt is preferred unless measured request volume and cache pricing prove otherwise.
 - One Telegram text message may produce multiple transaction drafts. Resolve references and later clarifications within that message, but do not send unrelated chat history to the language model.
 - A preview correction may send only the normalized current preview and the user's direct reply to the language model; never include unrelated messages or raw history.
 - The preview, direct reply, controlled catalogs, timestamp, and timezone are serialized into one TOON input document for correction requests.
@@ -72,6 +79,7 @@ This is the living rules file for the budget app. We update it when decisions be
 - Parsing failures should ask for a corrected message instead of silently guessing.
 - Show all drafts and balance observations from one user message in one numbered Telegram preview and manage it through a normal text reply, without an inline button grid.
 - Collect missing amount, currency, category, account, and other ambiguities into one numbered clarification block instead of sending separate prompts.
+- Never truncate or replace any preview, clarification, comment, or ambiguity with an ellipsis when the complete message fits Telegram's 4,096-character limit. Compact content only after the complete preview actually exceeds that hard limit, while preserving every numbered item, every missing-field request, the reply instructions, and the no-write warning.
 - Destructive actions must require explicit confirmation.
 
 ### Parser Preview Mode

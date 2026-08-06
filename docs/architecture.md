@@ -26,6 +26,8 @@ A single Telegram message may yield multiple ordered transaction drafts plus sep
 
 Dynamic OpenAI input context is serialized with the official TOON encoder: current text or normalized preview, the direct correction reply, controlled catalogs, timestamp, and timezone. OpenAI still returns strict JSON Schema Structured Outputs, which application code validates before Telegram sees them. Personal transfers use `account` as the source and `destinationAccount` as the receiver; they do not change the one total EUR balance.
 
+The OpenAI boundary keeps static developer instructions before changing TOON data, uses separate stable cache keys for parsing and revision, and records only aggregate token usage. GPT-5.6 requests use `reasoning.effort: none`, low text verbosity, and an output cap after the representative live suite showed no quality regression versus `low`. Explicit cache breakpoints prevent changing user data from becoming a paid cache write; the current reusable prefix is intentionally not padded to reach the 1,024-token cache threshold.
+
 Reports query already converted EUR values from Notion. The application aggregates totals itself and uses QuickChart only to render a PNG; the language model is never used for arithmetic.
 
 Frankfurter v2 provides the historical rate without a project API key. The converter sends the transaction date, converts into EUR in application code, uses rate `1` for EUR, and rejects a returned rate dated after the transaction.

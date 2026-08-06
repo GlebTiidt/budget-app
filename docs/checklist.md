@@ -72,6 +72,10 @@ Exit condition: one verified transaction can be written exactly once through the
 - [x] Add the official OpenAI JavaScript SDK.
 - [x] Add the official TOON JavaScript encoder and serialize dynamic structured prompt context as TOON while retaining strict JSON Schema output.
 - [x] Benchmark a representative six-operation prompt with the official TOON CLI: estimated input fell from about 340 JSON tokens to 207 TOON tokens (`-39.1%`); keep measuring real production usage before treating this as a universal saving.
+- [x] Apply the official GPT-5.6 efficiency guidance: keep the prompt lean and stable, use `gpt-5.6-luna`, cap output, request low verbosity, and log token totals without logging budget text.
+- [x] Compare `low` and `none` reasoning on all 11 live parser cases plus both reply revisions: both configurations passed; `none` reduced aggregate tokens from 17,312 to 15,768 (`-8.9%`) and is the default.
+- [x] Add separate parse/revise cache keys and explicit stable-prefix breakpoints. Live usage showed zero cache reads and writes because the lean reusable prefixes remain below OpenAI's 1,024-token threshold; do not pad them merely to activate caching.
+- [x] Review TOON, LLMLingua, tiktoken, Promptfoo, and LiteLLM for this workload and document the adoption decision in [`docs/token-optimization.md`](token-optimization.md).
 - [x] Add a structured-output parser for amount, currency, direction, date, category, source/ordinary account, transfer destination account, description, confidence, and ambiguities.
 - [x] Parse every distinct transaction in one Telegram message into an ordered array of independent drafts.
 - [x] Parse a stated current balance separately from transactions so it is never invented as income or expense.
@@ -82,7 +86,7 @@ Exit condition: one verified transaction can be written exactly once through the
 - [x] Add `OPENAI_API_KEY` locally and verify it with a live Responses API parser request.
 - [x] Add `OPENAI_API_KEY` to Vercel Production and Development.
 - [x] Deploy an owner-only Telegram parser preview that clearly states confirmations do not write to Notion.
-- [x] Test the parser against 11 synthetic representative messages with the live configured model; all 11 pass.
+- [x] Test the parser against 11 synthetic representative messages with the live configured model and token-optimized settings; all 11 plus both reply-revision cases pass.
 - [x] Add deterministic fallback/error messages for incomplete or ambiguous input; missing transaction amount or currency remains explicit instead of being guessed.
 - [x] Show all drafts and balance observations from one input in one numbered Telegram preview without an inline button grid.
 - [x] Ask for every missing amount, currency, category, or account in one numbered clarification block.

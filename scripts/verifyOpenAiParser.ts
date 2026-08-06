@@ -5,6 +5,10 @@ import {
   type ParsedBudgetMessageDraft,
   type ParsedTransactionDraft
 } from "../src/integrations/openai/openAiTransactionParser.js";
+import type {
+  OpenAiReasoningEffort,
+  OpenAiTokenUsage
+} from "../src/integrations/openai/openAiTokenOptimization.js";
 import { formatBudgetMessagePreview } from "../src/integrations/telegram/telegramBot.js";
 
 type DirectionCounts = {
@@ -34,6 +38,8 @@ type VerificationCase = {
 };
 
 const fixedNow = new Date("2026-08-04T07:45:00.000Z");
+const reasoningEffort = readReasoningEffort(process.argv.slice(2));
+const tokenUsage: OpenAiTokenUsage[] = [];
 
 const verificationCases: VerificationCase[] = [
   {
@@ -180,8 +186,12 @@ const parser = createOpenAiTransactionParser({
   timezone: config.timezone,
   categories: [...TRANSACTION_CATEGORIES],
   accounts: [...ACCOUNTS],
-  currencies: [...CURRENCIES]
+  currencies: [...CURRENCIES],
+  reasoningEffort,
+  onTokenUsage: (usage) => tokenUsage.push(usage)
 });
+
+console.log(`Live parser reasoning effort: ${reasoningEffort}.`);
 
 let passed = 0;
 let revisionSource: ParsedBudgetMessageDraft | undefined;
@@ -300,6 +310,8 @@ if (
   process.exitCode = 1;
 }
 
+printTokenUsageSummary(tokenUsage);
+
 function verifyResult(
   parsed: ParsedBudgetMessageDraft,
   verificationCase: VerificationCase
@@ -349,4 +361,54 @@ function transactionMatches(
   return Object.entries(expected).every(([key, value]) => {
     return actual[key as keyof ExpectedTransaction] === value;
   });
+}
+
+function readReasoningEffort(args: string[]): OpenAiReasoningEffort {
+  const value = args
+    .find((argument) => argument.startsWith("--reasoning="))
+    ?.slice("--reasoning=".length);
+
+  if (value === undefined || value === "none") {
+    return "none";
+  }
+  if (value === "low" || value === "medium") {
+    return value;
+  }
+
+  throw new Error("Use --reasoning=none, --reasoning=low, or --reasoning=medium.");
+}
+
+function printTokenUsageSummary(usages: OpenAiTokenUsage[]): void {
+  const totals = usages.reduce(
+    (result, usage) => ({
+      requests: result.requests + 1,
+      inputTokens: result.inputTokens + usage.inputTokens,
+      cachedInputTokens: result.cachedInputTokens + usage.cachedInputTokens,
+      cacheWriteTokens: result.cacheWriteTokens + usage.cacheWriteTokens,
+      outputTokens: result.outputTokens + usage.outputTokens,
+      reasoningTokens: result.reasoningTokens + usage.reasoningTokens,
+      totalTokens: result.totalTokens + usage.totalTokens
+    }),
+    {
+      requests: 0,
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      cacheWriteTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 0
+    }
+  );
+  const cacheReadPercent =
+    totals.inputTokens === 0
+      ? 0
+      : (totals.cachedInputTokens / totals.inputTokens) * 100;
+
+  console.log(
+    "OpenAI usage summary: " +
+      `requests=${totals.requests}, input=${totals.inputTokens}, ` +
+      `cache-read=${totals.cachedInputTokens} (${cacheReadPercent.toFixed(1)}%), ` +
+      `cache-write=${totals.cacheWriteTokens}, output=${totals.outputTokens}, ` +
+      `reasoning=${totals.reasoningTokens}, total=${totals.totalTokens}.`
+  );
 }
