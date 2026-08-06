@@ -168,6 +168,8 @@ Exit condition: the bot returns verified monthly totals and a chart whose segmen
 - [x] Run `npm test`; all 48 local tests pass after the currency, settings isolation, Notion report, Telegram Mini App authorization, and Chart.js work.
 - [x] Add the Telegram webhook HTTP endpoint for Vercel and register the production URL with Telegram.
 - [x] Deploy the owner-only parser preview to Vercel Production and register its Telegram webhook.
+- [x] Deploy the owner-only Chart.js Mini App and report API to the personal Vercel surface; verify the static page returns `200`, an unsigned API request returns `401`, and a signed master request returns a valid empty August 2026 report.
+- [x] Register and verify the production Telegram menu commands `/start`, `/settings`, `/reports`, and `/help`; the webhook has no pending updates or reported error.
 - [ ] Perform an end-to-end production smoke test.
 - [ ] Verify that logs contain no tokens or sensitive budget text.
 - [ ] Document token rotation and recovery steps.
@@ -253,7 +255,7 @@ The multi-operation preview is deployed and its health endpoint and webhook are 
 
 ## Current Next Actions
 
-1. Deploy the owner preview, register the four Telegram menu commands, and complete the `/start`, `/settings`, `/reports`, and message-summary smoke tests without writing financial data to Notion.
+1. Complete the remaining owner interaction smoke tests for `/start`, `/settings`, `/reports`, and message summaries inside Telegram without writing financial data to Notion.
 2. Provision the dedicated server and persistent SQLite volume, configure `USER_DATABASE_PATH`, and verify backup plus restore before relying on saved non-master profiles.
 3. Provide an exact opening balance anchor and effective date in the selected base currency.
 4. Migrate the owner's fixed-EUR Notion fields to a generic verified base-currency representation before enabling non-EUR confirmed writes.
