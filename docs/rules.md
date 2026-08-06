@@ -80,6 +80,7 @@ This is the living rules file for the budget app. We update it when decisions be
 - Only allow configured Telegram user IDs.
 - A user without a stored base currency must choose one before transaction parsing starts. `/settings` shows and changes that user's currency without affecting another profile.
 - Keep `/start`, `/settings`, `/reports`, and `/help` in the Telegram command menu.
+- Keep Telegram's native chat menu control. Its desktop focus outline and icon are client-owned; do not add a duplicate custom hamburger inside the report Mini App unless the product gains real in-app navigation.
 - Bot replies must sound like a concise, supportive conversation with a trusted companion: use ordinary first-person language, ask natural questions, and avoid robotic headings, bookkeeping jargon, or command-manual phrasing when a plain explanation works.
 - Bot replies must remain short and action-oriented; warmth must not obscure amounts, currencies, dates, account routes, uncertainty, or the next action.
 - Render Telegram previews as escaped HTML: make section headings, amount-plus-currency values, and categories bold, and escape every model-derived description, note, category, account, and ambiguity before sending it to Telegram.
@@ -135,3 +136,4 @@ This is the living rules file for the budget app. We update it when decisions be
 - Optimize cost by shortening repeated prompts, using structured outputs, and measuring actual usage; do not sacrifice transaction correctness merely to reduce token count.
 - Aggregate report totals deterministically in application code. Report queries and Chart.js rendering must not call OpenAI or send budget history to a language model.
 - Use the pinned self-hosted Chart.js build for animated master-account charts. Keep the core report available without a per-user visualization fee; if a future external chart provider charges by user or request, its incremental features belong behind a paid plan and must not remove the free core report.
+- Keep Chart.js as the single active chart renderer. Do not retain an unused hosted or static chart integration alongside it.

@@ -6,7 +6,6 @@ test("loadConfig applies safe integration defaults", () => {
   const config = loadConfig({});
 
   assert.equal(config.openaiModel, "gpt-5.6-luna");
-  assert.equal(config.quickChartBaseUrl, "https://quickchart.io/chart");
   assert.equal(config.timezone, "Asia/Ho_Chi_Minh");
   assert.equal(config.userDatabasePath, ".data/budget-app.sqlite");
   assert.equal(config.reportsWebAppUrl, undefined);

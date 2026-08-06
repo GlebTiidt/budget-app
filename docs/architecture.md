@@ -28,7 +28,7 @@ Dynamic OpenAI input context is serialized with the official TOON encoder: curre
 
 The OpenAI boundary keeps static developer instructions before changing TOON data, uses separate stable cache keys for parsing and revision, and records only aggregate token usage. GPT-5.6 requests use `reasoning.effort: none`, low text verbosity, and an output cap after the representative live suite showed no quality regression versus `low`. Explicit cache breakpoints prevent changing user data from becoming a paid cache write; the current reusable prefix is intentionally not padded to reach the 1,024-token cache threshold.
 
-The application aggregates totals itself; QuickChart may render a static Telegram PNG and the self-hosted Chart.js client renders the interactive owner report. The language model is never used for arithmetic. Every user chooses one base currency. Original amounts, currencies, and dates remain source facts, while preview totals and future reports are deterministically converted into that user's selected currency.
+The application aggregates totals itself, and the self-hosted Chart.js client renders the interactive owner report. The language model is never used for arithmetic. Every user chooses one base currency. Original amounts, currencies, and dates remain source facts, while preview totals and future reports are deterministically converted into that user's selected currency.
 
 Frankfurter v2 provides the historical rate without a project API key. The converter sends the transaction date, converts into the requested user currency in application code, uses rate `1` for same-currency conversions, and rejects a returned rate dated after the transaction.
 

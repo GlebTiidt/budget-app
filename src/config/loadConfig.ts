@@ -10,7 +10,6 @@ export type AppConfig = {
   notionMasterSettingsDataSourceId: string | undefined;
   openaiApiKey: string | undefined;
   openaiModel: string;
-  quickChartBaseUrl: string;
   timezone: string;
 };
 
@@ -35,8 +34,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ),
     openaiApiKey: emptyToUndefined(env.OPENAI_API_KEY),
     openaiModel: emptyToUndefined(env.OPENAI_MODEL) ?? "gpt-5.6-luna",
-    quickChartBaseUrl:
-      emptyToUndefined(env.QUICKCHART_BASE_URL) ?? "https://quickchart.io/chart",
     timezone: emptyToUndefined(env.APP_TIMEZONE) ?? "Asia/Ho_Chi_Minh"
   };
 }

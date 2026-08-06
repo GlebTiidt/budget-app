@@ -45,13 +45,9 @@ type BudgetPreviewFormattingOptions = {
   summaryUnavailable?: boolean;
 };
 
-type PreviewAction = "confirm" | "correct" | "cancel";
-type PreviewItemKind = "transaction" | "balance";
-
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 const PREVIEW_WARNING =
   "Пока это только черновик — в Notion ничего не записано.";
-const LEGACY_PREVIEW_WARNING = "Preview: в Notion ничего не записано.";
 const previewReplyMarkup = {
   force_reply: true as const,
   selective: true,
@@ -200,57 +196,6 @@ export function createTelegramPreviewBot(
       }
     );
   });
-
-  bot.callbackQuery("preview:confirm", async (ctx) => {
-    await ctx.answerCallbackQuery({ text: "Черновик проверен." });
-    await ctx.reply(
-      "✅ Понял. Это был тест черновика — в Notion ничего не записано."
-    );
-  });
-
-  bot.callbackQuery("preview:correct", async (ctx) => {
-    await ctx.answerCallbackQuery();
-    await ctx.reply(
-      "✏️ Отправьте исправленное сообщение целиком. Я заново найду в нём все операции."
-    );
-  });
-
-  bot.callbackQuery("preview:cancel", async (ctx) => {
-    await ctx.answerCallbackQuery({ text: "Черновик отменён." });
-    await ctx.reply("Черновик отменён. В Notion ничего не записано.");
-  });
-
-  bot.callbackQuery(
-    /^preview:(confirm|correct|cancel):(transaction|balance):(\d+)$/,
-    async (ctx) => {
-      const action = ctx.match[1] as PreviewAction;
-      const kind = ctx.match[2] as PreviewItemKind;
-      const position = Number(ctx.match[3]);
-      const label =
-        kind === "transaction"
-          ? `Транзакция №${position}`
-          : `Наблюдение баланса №${position}`;
-      const checkedWord = kind === "transaction" ? "проверена" : "проверено";
-      const cancelledWord = kind === "transaction" ? "отменена" : "отменено";
-
-      if (action === "confirm") {
-        await ctx.answerCallbackQuery({ text: `${label} ${checkedWord}.` });
-        await ctx.reply(`✅ ${label} ${checkedWord}. В Notion ничего не записано.`);
-        return;
-      }
-
-      if (action === "correct") {
-        await ctx.answerCallbackQuery();
-        await ctx.reply(
-          `✏️ Отправьте исправленный текст для пункта «${label}». Я покажу новый preview.`
-        );
-        return;
-      }
-
-      await ctx.answerCallbackQuery({ text: `${label} ${cancelledWord}.` });
-      await ctx.reply(`✖️ ${label} ${cancelledWord}. В Notion ничего не записано.`);
-    }
-  );
 
   bot.on("message:text", async (ctx) => {
     try {
@@ -850,8 +795,7 @@ function getRepliedPreviewText(
   if (!replyToMessage?.from?.is_bot || !replyToMessage.text) {
     return null;
   }
-  return replyToMessage.text.includes(PREVIEW_WARNING) ||
-    replyToMessage.text.includes(LEGACY_PREVIEW_WARNING)
+  return replyToMessage.text.includes(PREVIEW_WARNING)
     ? replyToMessage.text
     : null;
 }

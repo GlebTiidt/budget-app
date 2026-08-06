@@ -5,6 +5,7 @@ This file is the single source of truth for project progress. A checked item mus
 ## Confirmed Product Decisions
 
 - [x] Telegram is the primary user interface.
+- [x] Keep Telegram's native mobile menu control; do not duplicate it with a custom hamburger in the report Mini App while there is no separate in-app navigation.
 - [x] Notion is the master's private transaction store and human-readable ledger; every other user must use isolated application storage.
 - [x] Every user has one base/reporting currency selected during onboarding; the supported initial choices are `USD`, `RUB`, `VND`, `AUD`, and `EUR`.
 - [x] Inputs may use multiple fiat currencies.
@@ -142,7 +143,6 @@ Exit condition: one real Telegram message completes the full confirmed path into
 
 ## Phase 6 — Monthly Reports and Charts
 
-- [x] Add a QuickChart PNG renderer for the owner's current EUR totals by category; generalizing its label to each user's base currency remains pending.
 - [x] Select pinned self-hosted Chart.js 4.5.1 for interactive animation; its MIT license has no per-user fee.
 - [x] Add a signed Telegram Mini App authorization validator and require both the explicit master ID and owner allowlist before reading report data.
 - [x] Add a read-only Notion master-report repository with pagination and month filtering against the current data source API.
@@ -151,21 +151,21 @@ Exit condition: one real Telegram message completes the full confirmed path into
 - [x] Query the master's Notion transactions for a selected month with pagination; the live August 2026 read-only smoke query succeeded with an empty result set.
 - [x] Aggregate expenses by category in application code.
 - [ ] Implement `/month` summary text.
-- [ ] Implement `/chart` doughnut chart and send the PNG to Telegram.
 - [x] Add income-versus-expense totals and net difference to the animated master report; a verified running balance remains pending.
 - [ ] Show the latest verified running balance in the user's base currency as the current available total.
 - [x] Handle an empty month with an explicit empty state instead of a misleading chart.
 - [x] Add the owner-only interactive Chart.js dashboard on the personal Vercel preview; future user reports remain on the dedicated application server.
+- [x] Remove the superseded QuickChart path and legacy preview-button callbacks so Chart.js and ordinary text replies remain the only active interfaces.
 
 Exit condition: the bot returns verified monthly totals and a chart whose segments match those totals.
 
 ## Phase 7 — Tests, Deployment, and Operations
 
-- [ ] Add unit tests for config, validation, AI result normalization, conversion, aggregation, and chart configuration.
+- [x] Add unit tests for config, validation, AI result normalization, conversion, aggregation, and the current Chart.js report-page contract.
 - [ ] Add running-balance tests for income, expense, transfer, same-day ordering, and backdated corrections.
-- [ ] Add integration tests with mocked OpenAI, Frankfurter, Notion, QuickChart, and Telegram responses.
+- [ ] Add the remaining integration tests with mocked OpenAI, Frankfurter, Notion, and Telegram responses.
 - [x] Run `npm run typecheck` after the currency, settings, and master-report implementation.
-- [x] Run `npm test`; all 48 local tests pass after the currency, settings isolation, Notion report, Telegram Mini App authorization, and Chart.js work.
+- [x] Run `npm test`; all 47 current local tests pass after removing the superseded QuickChart and legacy preview-button paths.
 - [x] Add the Telegram webhook HTTP endpoint for Vercel and register the production URL with Telegram.
 - [x] Deploy the owner-only parser preview to Vercel Production and register its Telegram webhook.
 - [x] Deploy the owner-only Chart.js Mini App and report API to the personal Vercel surface; verify the static page returns `200`, an unsigned API request returns `401`, and a signed master request returns a valid empty August 2026 report.
