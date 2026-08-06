@@ -50,6 +50,36 @@ test("converts VND to EUR using the requested transaction date", async () => {
   assert.equal(result.rate, 0.000033);
 });
 
+test("converts into an explicitly selected non-EUR target currency", async () => {
+  let requestedUrl = "";
+  const converter = createFrankfurterCurrencyConverter(
+    "https://example.test/v2",
+    async (input) => {
+      requestedUrl = String(input);
+      return new Response(
+        JSON.stringify({
+          date: "2026-08-06",
+          base: "EUR",
+          quote: "USD",
+          rate: 1.16
+        }),
+        { status: 200 }
+      );
+    }
+  );
+
+  const result = await converter.convert({
+    amount: 100,
+    from: "EUR",
+    to: "USD",
+    occurredOn: "2026-08-06"
+  });
+
+  assert.equal(result.convertedAmount, 116);
+  assert.equal(result.targetCurrency, "USD");
+  assert.match(requestedUrl, /\/rate\/EUR\/USD\?date=2026-08-06$/);
+});
+
 test("accepts the latest available prior rate on a non-trading day", async () => {
   const converter = createFrankfurterCurrencyConverter(
     "https://example.test/v2",

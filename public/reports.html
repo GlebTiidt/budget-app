@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://telegram.org; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="theme-color" content="#11130f" />
+    <title>Доходы и расходы</title>
+    <link rel="stylesheet" href="/reports.css" />
+    <script src="https://telegram.org/js/telegram-web-app.js?59" defer></script>
+    <script src="/vendor/chart.umd.min.js" defer></script>
+    <script src="/reports.js" defer></script>
+  </head>
+  <body>
+    <main class="report-shell">
+      <header class="report-header">
+        <div>
+          <p class="eyebrow">Личный бюджет</p>
+          <h1>Деньги в движении</h1>
+          <p class="subtitle">Доходы и расходы мастер-аккаунта — спокойно и без лишней бухгалтерии.</p>
+        </div>
+        <div class="month-field">
+          <label for="report-month">Месяц</label>
+          <input id="report-month" type="month" aria-label="Месяц отчёта" />
+        </div>
+      </header>
+
+      <section class="summary-grid" aria-label="Итоги месяца">
+        <article class="summary-card income-card">
+          <span>Доход</span>
+          <strong id="income-total">—</strong>
+        </article>
+        <article class="summary-card expense-card">
+          <span>Расход</span>
+          <strong id="expense-total">—</strong>
+        </article>
+        <article class="summary-card net-card">
+          <span>Разница</span>
+          <strong id="net-total">—</strong>
+        </article>
+      </section>
+
+      <section class="chart-card">
+        <div class="chart-toolbar">
+          <div>
+            <p class="eyebrow">Вид диаграммы</p>
+            <h2 id="chart-heading">По дням</h2>
+          </div>
+          <div class="chart-picker" role="group" aria-label="Выберите диаграмму">
+            <button class="chart-type is-active" type="button" data-chart="bar" aria-pressed="true">Столбцы</button>
+            <button class="chart-type" type="button" data-chart="line" aria-pressed="false">Линии</button>
+            <button class="chart-type" type="button" data-chart="doughnut" aria-pressed="false">Кольцо</button>
+          </div>
+        </div>
+
+        <div class="chart-stage" id="chart-stage" aria-live="polite">
+          <div class="loading-state" id="loading-state">
+            <span></span><span></span><span></span>
+            <p>Собираю ваш месяц…</p>
+          </div>
+          <canvas id="money-chart" role="img" aria-label="Диаграмма доходов и расходов"></canvas>
+          <div class="empty-state" id="empty-state" hidden>
+            <strong>В этом месяце пока тихо</strong>
+            <p>Когда в Notion появятся доходы или расходы, они сразу оживут здесь.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="category-card" aria-labelledby="category-heading">
+        <div>
+          <p class="eyebrow">Куда ушли деньги</p>
+          <h2 id="category-heading">Расходы по категориям</h2>
+        </div>
+        <ol class="category-list" id="category-list"></ol>
+      </section>
+
+      <p class="privacy-note">Данные читаются только из Notion мастер-аккаунта. Доступ проверяется через Telegram.</p>
+      <div class="error-state" id="error-state" hidden role="alert">
+        <strong>Не получилось открыть отчёт</strong>
+        <p id="error-message">Попробуйте ещё раз из меню бота.</p>
+        <button id="retry-button" type="button">Повторить</button>
+      </div>
+    </main>
+  </body>
+</html>

@@ -5,6 +5,9 @@
   "functions": {
     "api/telegram.ts": {
       "maxDuration": 60
+    },
+    "api/reports.ts": {
+      "maxDuration": 30
     }
   }
 }

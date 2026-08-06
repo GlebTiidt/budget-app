@@ -14,7 +14,7 @@ This is the living rules file for the budget app. We update it when decisions be
 
 - The app is personal-first: optimize for speed, low friction, and clear personal accounting.
 - Telegram is the first interface for testing and daily input.
-- Notion is the first accounting backend and should remain human-readable.
+- Notion is the master's personal accounting backend and should remain human-readable. Other users must use isolated application storage.
 - Avoid overbuilding until a real workflow proves the need.
 - Finish and validate the Telegram workflow before starting the native iOS implementation.
 - Treat Telegram and the future SwiftUI app as clients of one server-side budget domain, not as separate accounting systems.
@@ -35,14 +35,15 @@ This is the living rules file for the budget app. We update it when decisions be
 - AI parsing must return structured data and must never write directly to Notion.
 - A parsed transaction requires user confirmation before it is saved.
 - Currency conversion and report totals are calculated by application code, not by the language model.
-- The opening balance is a controlled EUR setting with an effective date; it is not recorded as a fake income transaction.
-- The personal MVP tracks one total EUR balance rather than separate per-account balances.
+- Every user has exactly one selected base/reporting currency from the supported currency catalog. The user must choose it during onboarding and may change it later in Telegram settings.
+- The opening balance is a controlled setting in the user's base currency with an effective date; it is not recorded as a fake income transaction.
+- The personal MVP tracks one total balance in the user's base currency rather than separate calculated per-account balances.
 - Transfers between supported personal accounts are first-class transactions. A transfer stores both its source account and destination account and requires confirmation before saving.
-- Every confirmed transaction stores `Остаток EUR`, the running balance immediately after that operation.
-- For the total balance, income adds the converted EUR amount, expense subtracts it, and transfers between personal accounts do not change it.
+- Every confirmed transaction must eventually store the base currency used and the running balance immediately after that operation. The owner's existing fixed-EUR Notion schema remains unchanged until its generic base-currency migration is implemented and verified.
+- For the total balance, income adds the amount converted into the user's base currency, expense subtracts it, and transfers between personal accounts do not change it.
 - For transaction drafts, `account` is the payment account for an expense, the receiving account for income, and the source account for a transfer; `destinationAccount` is required only for a transfer.
 - Backdated inserts, corrections, and deletions require recalculation of every later running balance in deterministic date/order sequence.
-- Currency conversion uses Frankfurter v2 without an API key and targets EUR. EUR-to-EUR uses rate `1` without a network request.
+- Currency conversion uses Frankfurter v2 without an API key and targets the user's selected base currency. A same-currency conversion uses rate `1` without a network request.
 - Request the rate for the transaction date. Accept the API's same-day rate or the latest returned prior rate, but never a rate after the transaction date.
 - Send only the current transaction text and controlled category/account lists to the language model, not the complete budget history.
 - Serialize structured OpenAI input context with the official TOON encoder. Keep strict JSON Schema Structured Outputs as the validated response contract.
@@ -67,7 +68,9 @@ This is the living rules file for the budget app. We update it when decisions be
 - The current account list is `Наличные`, `Карта`, `Сбережения`, `Вьетнамский счёт`, and `Crypto`.
 - Vietnamese QR payments use `Вьетнамский счёт`; cryptocurrency holdings, wallets, and payments use `Crypto`; `Наличные` is reserved for physical cash.
 - The current currency list is `USD`, `RUB`, `VND`, `AUD`, and `EUR`.
-- A user may report an observed current balance for a named account in a supported currency. The application converts that observation to EUR for comparison with the calculated balance but does not store it as income or expense. Account-specific reconciliation does not change the MVP decision to report one total EUR balance.
+- A user may report an observed current balance for a named account in a supported currency. The application converts that observation to the user's base currency for comparison with the calculated balance but does not store it as income or expense. Account-specific reconciliation does not change the MVP decision to report one total balance.
+- Preview totals show income and expense from complete non-transfer operations in the current message only. Transfers never affect those totals. An account balance is shown only from an explicit balance observation; never present income minus expense from one message as the user's real account balance.
+- Changing the base currency changes derived totals and reports for that user only. Preserve original amounts, currencies, and dates so derived values can be recalculated deterministically instead of rewriting source facts.
 - When an observed balance is below the calculated balance, the bot starts a reconciliation conversation in plain, non-judgmental language, states the difference, and invites the user to recall missing expenses.
 - Reconciliation may produce one or more post-factum drafts. Every draft requires normal validation and independent confirmation, and the bot shows the remaining unexplained difference after each confirmed expense.
 - The bot must never invent a missing expense or silently create a balancing adjustment. The user may stop reconciliation with an unresolved difference.
@@ -75,6 +78,8 @@ This is the living rules file for the budget app. We update it when decisions be
 ## Telegram Rules
 
 - Only allow configured Telegram user IDs.
+- A user without a stored base currency must choose one before transaction parsing starts. `/settings` shows and changes that user's currency without affecting another profile.
+- Keep `/start`, `/settings`, `/reports`, and `/help` in the Telegram command menu.
 - Bot replies must sound like a concise, supportive conversation with a trusted companion: use ordinary first-person language, ask natural questions, and avoid robotic headings, bookkeeping jargon, or command-manual phrasing when a plain explanation works.
 - Bot replies must remain short and action-oriented; warmth must not obscure amounts, currencies, dates, account routes, uncertainty, or the next action.
 - Render Telegram previews as escaped HTML: make section headings, amount-plus-currency values, and categories bold, and escape every model-derived description, note, category, account, and ambiguity before sending it to Telegram.
@@ -88,7 +93,7 @@ This is the living rules file for the budget app. We update it when decisions be
 
 - The deployed preview is owner-only and exists to test Telegram delivery, language, parsing quality, and draft controls before enabling financial writes.
 - Every preview draft and action response must state that nothing was written to Notion.
-- Reply actions such as `всё верно`, field corrections, and `отмени 4` exercise preview UX only; they must not call currency conversion or any repository write.
+- Reply actions such as `всё верно`, field corrections, and `отмени 4` exercise preview UX only. A preview may call the read-only currency-rate service and may persist user settings, but it must not write a financial transaction or balance observation.
 - Committed tests and fixtures must use synthetic examples and must never contain credentials, API keys, personal identifiers, or real financial history.
 - Application logs must not contain raw Telegram transaction text. An exact user phrase may be used transiently for debugging only and must be removed after a synthetic regression case reproduces it.
 - Do not mark the full Telegram transaction flow complete until one real Telegram message passes confirmation, conversion, an idempotent Notion write, and a verified receipt.
@@ -99,12 +104,16 @@ This is the living rules file for the budget app. We update it when decisions be
 - Prefer explicit properties over packed JSON text fields.
 - All Notion writes should be idempotent when possible.
 - Store integration IDs or source hashes to prevent duplicate transactions.
-- The current Notion workspace is the owner's private ledger. Never write another user's transactions or settings into it.
+- The current Notion workspace belongs only to the master/owner account. It is the owner's private ledger and read-only source for the owner's visual reports. Never write or expose another user's transactions, settings, or reports through it.
+- Every endpoint that reads the owner's report data must validate signed Telegram Mini App `initData` on the server, reject expired signatures, require an exact match with `MASTER_TELEGRAM_USER_ID`, and also enforce `TELEGRAM_ALLOWED_USER_IDS` before querying Notion.
 
 ## Multi-User Rules
 
 - Adding a Telegram ID is not sufficient multi-user support; access must include onboarding, revocation, authorization, and isolated storage.
-- Do not use a local text, JSON, or SQLite file on Vercel as the persistent multi-user database.
+- The planned production runtime is a dedicated server with a persistent disk; Vercel remains a personal preview surface and is not the persistence layer for user settings.
+- Store small user-profile data in one SQLite database on the server's persistent volume, with one row keyed by Telegram user ID. Do not create a separate JSON or database file per user.
+- The master account is the only exception: its small settings row lives in the owner's private Notion workspace so the owner's personal Vercel preview can retain currency and onboarding preferences. Route this adapter only for the explicit master Telegram ID and fail closed if its Notion settings source is missing; never fall back to ephemeral or shared storage for the master. Every other user remains on isolated application storage.
+- A single-file SQLite deployment must run as one application instance with controlled backups. Migrate to a network database before adding multiple writers or horizontally scaled instances.
 - Every transaction, category, account, balance, and preference must be owned by exactly one authenticated user and scoped in every query.
 - User-created categories belong only to that user; creating or editing one must never change the owner's Notion options or another user's categories.
 - Multi-user OpenAI usage requires per-user rate limits and a documented spending policy before access is expanded.
@@ -117,10 +126,12 @@ This is the living rules file for the budget app. We update it when decisions be
 - Config must be read through `src/config`, not directly from `process.env` across the app.
 - Add tests around parsing, categorization, and duplicate prevention before expanding behavior.
 - Keep secrets out of git. Use `.env.local` for local credentials.
-- Store production secrets in Vercel environment variables.
+- Store production secrets in environment variables or the secret manager of the active server. Existing Vercel secrets apply only to the personal preview deployment.
 - Never ship Telegram, Notion, OpenAI, Vercel, or currency-provider secrets inside an iOS application bundle.
 - Prefer Apple on-device speech recognition for the future iOS client when the target locale and device support it.
 - Raw voice recordings are deleted after transcription by default and are never written to logs.
 - A multi-operation Telegram text creates multiple drafts, and every draft requires independent validation and confirmation.
 - A daily voice note may create multiple drafts, but every draft requires independent validation and confirmation.
 - Optimize cost by shortening repeated prompts, using structured outputs, and measuring actual usage; do not sacrifice transaction correctness merely to reduce token count.
+- Aggregate report totals deterministically in application code. Report queries and Chart.js rendering must not call OpenAI or send budget history to a language model.
+- Use the pinned self-hosted Chart.js build for animated master-account charts. Keep the core report available without a per-user visualization fee; if a future external chart provider charges by user or request, its incremental features belong behind a paid plan and must not remove the free core report.

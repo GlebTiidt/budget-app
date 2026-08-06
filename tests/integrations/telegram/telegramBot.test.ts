@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadConfig } from "../../../src/config/loadConfig.js";
 import type {
+  UserSettings,
+  UserSettingsRepository
+} from "../../../src/budget/userSettings.js";
+import type { CurrencyConverter } from "../../../src/integrations/currency/frankfurterCurrencyConverter.js";
+import type {
   ParsedBudgetMessageDraft,
   ParsedTransactionDraft,
   TransactionTextParser
@@ -59,8 +64,11 @@ test("formats all parsed items in one safe preview", () => {
     /Б1\. На счёте «Вьетнамский счёт» осталось <b>20[  ]000 VND<\/b> на 04\.08\.2026\./
   );
   assert.match(preview, /Держу его отдельно, чтобы не считать доходом или расходом/);
-  assert.match(preview, /<b>Всё совпало\?<\/b> Напишите «всё верно»\./);
-  assert.match(preview, /Хотите что-то поправить\? Просто напишите/);
+  assert.match(
+    preview,
+    /<b>Всё совпало\?<\/b> Напишите «всё верно» или просто скажите, что поправить\./
+  );
+  assert.doesNotMatch(preview, /для всех счёт Вьетнамский счёт/);
   assert.match(preview, /в Notion ничего не записано/);
 });
 
@@ -156,7 +164,7 @@ test("keeps complete clarification text when the preview fits Telegram", () => {
     ambiguities: [clarification]
   });
 
-  assert.ok(preview.length <= 4096);
+  assert.ok(renderedTelegramLength(preview) <= 4096);
   assert.match(preview, /вся сумма пришла на Вьетнамский счёт\./);
   assert.doesNotMatch(preview, /эквивалента исходных…/);
 });
@@ -195,7 +203,7 @@ test("keeps a maximum-size batch inside one Telegram message", () => {
     ambiguities: [longText]
   });
 
-  assert.ok(preview.length <= 4096);
+  assert.ok(renderedTelegramLength(preview) <= 4096);
   assert.match(
     preview,
     /Пока это только черновик — в Notion ничего не записано\.$/
@@ -244,9 +252,14 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
   };
   const config = loadConfig({
     TELEGRAM_BOT_TOKEN: "123456:test-token",
-    TELEGRAM_ALLOWED_USER_IDS: "100001"
+    TELEGRAM_ALLOWED_USER_IDS: "100001",
+    REPORTS_WEB_APP_URL: "https://budget.example/reports.html"
   });
-  const bot = createTelegramPreviewBot(config, { parser });
+  const bot = createTelegramPreviewBot(config, {
+    parser,
+    currencyConverter: passthroughCurrencyConverter,
+    userSettingsRepository: createUserSettingsRepository()
+  });
   const sentMessages: Array<Record<string, unknown>> = [];
 
   bot.api.config.use(
@@ -314,6 +327,16 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
   assert.match(String(sentMessages[0]?.text), /1\. Доход/);
   assert.match(String(sentMessages[0]?.text), /2\. Расход/);
   assert.match(String(sentMessages[0]?.text), /Б1\./);
+  assert.match(
+    String(sentMessages[0]?.text),
+    /<b>Итог этого сообщения в EUR:<\/b>/
+  );
+  assert.match(String(sentMessages[0]?.text), /<b>Доход:<\/b> <b>50 EUR<\/b>/);
+  assert.match(String(sentMessages[0]?.text), /<b>Расход:<\/b> <b>50 EUR<\/b>/);
+  assert.match(
+    String(sentMessages[0]?.text),
+    /<b>Остаток:<\/b> <b>20[  ]000 EUR<\/b>/
+  );
 
   const replyMarkup = sentMessages[0]?.reply_markup as {
     force_reply: boolean;
@@ -426,6 +449,220 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
   assert.match(String(sentMessages[3]?.text), /Весь черновик отменён/);
 });
 
+test("Telegram requires onboarding currency and keeps it in user settings", async () => {
+  let savedSettings: UserSettings | null = null;
+  let parseCalls = 0;
+  const userSettingsRepository: UserSettingsRepository = {
+    async findByTelegramUserId(telegramUserId) {
+      return savedSettings?.telegramUserId === telegramUserId
+        ? savedSettings
+        : null;
+    },
+    async save(settings) {
+      savedSettings = settings;
+    }
+  };
+  const parser: TransactionTextParser = {
+    async parse() {
+      parseCalls += 1;
+      return {
+        transactions: [
+          {
+            ...createDraft("income"),
+            account: "Crypto"
+          }
+        ],
+        balanceObservations: [],
+        ambiguities: []
+      };
+    },
+    async revise() {
+      throw new Error("not used");
+    }
+  };
+  const config = loadConfig({
+    TELEGRAM_BOT_TOKEN: "123456:test-token",
+    TELEGRAM_ALLOWED_USER_IDS: "100001",
+    REPORTS_WEB_APP_URL: "https://budget.example/reports.html"
+  });
+  const bot = createTelegramPreviewBot(config, {
+    parser,
+    currencyConverter: passthroughCurrencyConverter,
+    userSettingsRepository
+  });
+  const sentMessages: Array<Record<string, unknown>> = [];
+  const editedMessages: Array<Record<string, unknown>> = [];
+
+  bot.api.config.use(
+    (async (
+      _previous: unknown,
+      method: string,
+      payload: Record<string, unknown>
+    ) => {
+      if (method === "getMe") {
+        return {
+          ok: true,
+          result: {
+            id: 123456,
+            is_bot: true,
+            first_name: "Budget Test Bot",
+            username: "budget_test_bot"
+          }
+        };
+      }
+      if (method === "sendMessage") {
+        sentMessages.push(payload);
+        return {
+          ok: true,
+          result: {
+            message_id: sentMessages.length,
+            date: 1_775_463_000,
+            chat: { id: 100001, type: "private", first_name: "Owner" },
+            text: payload.text
+          }
+        };
+      }
+      if (method === "editMessageText") {
+        editedMessages.push(payload);
+        return {
+          ok: true,
+          result: {
+            message_id: 1,
+            date: 1_775_463_000,
+            chat: { id: 100001, type: "private", first_name: "Owner" },
+            text: payload.text
+          }
+        };
+      }
+      if (method === "answerCallbackQuery" || method === "sendChatAction") {
+        return { ok: true, result: true };
+      }
+      throw new Error(`Unexpected Telegram method: ${method}`);
+    }) as Parameters<typeof bot.api.config.use>[0]
+  );
+
+  await bot.init();
+
+  await bot.handleUpdate({
+    update_id: 10,
+    message: {
+      message_id: 20,
+      date: 1_775_463_000,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: { id: 100001, is_bot: false, first_name: "Owner" },
+      text: "/start",
+      entities: [{ type: "bot_command", offset: 0, length: 6 }]
+    }
+  });
+
+  assert.match(String(sentMessages[0]?.text), /выберем основную валюту/i);
+  assert.match(JSON.stringify(sentMessages[0]?.reply_markup), /settings:currency:EUR/);
+
+  await bot.handleUpdate({
+    update_id: 11,
+    message: {
+      message_id: 21,
+      date: 1_775_463_001,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: { id: 100001, is_bot: false, first_name: "Owner" },
+      text: "Получил 50 USD"
+    }
+  });
+
+  assert.equal(parseCalls, 0, "OpenAI must not run before currency selection");
+  assert.match(String(sentMessages[1]?.text), /Сначала выберите основную валюту/);
+
+  await bot.handleUpdate({
+    update_id: 12,
+    callback_query: {
+      id: "callback-1",
+      from: { id: 100001, is_bot: false, first_name: "Owner" },
+      chat_instance: "chat-instance",
+      data: "settings:currency:USD",
+      message: {
+        message_id: 1,
+        date: 1_775_463_000,
+        chat: { id: 100001, type: "private", first_name: "Owner" },
+        text: String(sentMessages[0]?.text)
+      }
+    }
+  });
+
+  assert.deepEqual(savedSettings, {
+    telegramUserId: "100001",
+    baseCurrency: "USD",
+    onboardingHelpShown: true
+  });
+  assert.match(String(editedMessages[0]?.text), /основная валюта USD/);
+
+  await bot.handleUpdate({
+    update_id: 13,
+    message: {
+      message_id: 22,
+      date: 1_775_463_002,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: { id: 100001, is_bot: false, first_name: "Owner" },
+      text: "Получил 50 USD"
+    }
+  });
+
+  assert.equal(parseCalls, 1);
+  assert.match(
+    String(sentMessages[2]?.text),
+    /<b>Итог этого сообщения в USD:<\/b>/
+  );
+  assert.match(String(sentMessages[2]?.text), /<b>Доход:<\/b> <b>50 USD<\/b>/);
+  assert.match(
+    String(sentMessages[2]?.text),
+    /<b>Остаток:<\/b> в этом сообщении не указан\./
+  );
+
+  await bot.handleUpdate({
+    update_id: 14,
+    message: {
+      message_id: 23,
+      date: 1_775_463_003,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: { id: 100001, is_bot: false, first_name: "Owner" },
+      text: "/start",
+      entities: [{ type: "bot_command", offset: 0, length: 6 }]
+    }
+  });
+  assert.match(String(sentMessages[3]?.text), /С возвращением/);
+  assert.doesNotMatch(String(sentMessages[3]?.text), /Слово «тоже»/);
+
+  await bot.handleUpdate({
+    update_id: 15,
+    message: {
+      message_id: 24,
+      date: 1_775_463_004,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: { id: 100001, is_bot: false, first_name: "Owner" },
+      text: "/help",
+      entities: [{ type: "bot_command", offset: 0, length: 5 }]
+    }
+  });
+  assert.match(String(sentMessages[4]?.text), /<b>Как со мной работать<\/b>/);
+  assert.match(String(sentMessages[4]?.text), /Слово «тоже»/);
+
+  await bot.handleUpdate({
+    update_id: 16,
+    message: {
+      message_id: 25,
+      date: 1_775_463_005,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: { id: 100001, is_bot: false, first_name: "Owner" },
+      text: "/reports",
+      entities: [{ type: "bot_command", offset: 0, length: 8 }]
+    }
+  });
+  assert.match(String(sentMessages[5]?.text), /выберите месяц и вид диаграммы/i);
+  assert.match(
+    JSON.stringify(sentMessages[5]?.reply_markup),
+    /https:\/\/budget\.example\/reports\.html/
+  );
+});
+
 function createDraft(
   direction: "expense" | "income" | "transfer"
 ): ParsedTransactionDraft {
@@ -442,4 +679,43 @@ function createDraft(
     confidence: 0.9,
     ambiguities: []
   };
+}
+
+const passthroughCurrencyConverter: CurrencyConverter = {
+  async convert(input) {
+    return {
+      originalAmount: input.amount,
+      originalCurrency: input.from,
+      occurredOn: input.occurredOn,
+      convertedAmount: input.amount,
+      targetCurrency: input.to ?? "EUR",
+      rate: 1,
+      rateDate: input.occurredOn
+    };
+  }
+};
+
+function createUserSettingsRepository(): UserSettingsRepository {
+  let settings: UserSettings = {
+    telegramUserId: "100001",
+    baseCurrency: "EUR",
+    onboardingHelpShown: true
+  };
+
+  return {
+    async findByTelegramUserId(telegramUserId) {
+      return telegramUserId === settings.telegramUserId ? settings : null;
+    },
+    async save(nextSettings) {
+      settings = nextSettings;
+    }
+  };
+}
+
+function renderedTelegramLength(value: string): number {
+  return value
+    .replace(/<\/?b>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&").length;
 }

@@ -7,6 +7,7 @@ async function main(): Promise<void> {
   console.log("Budget bot preview starting", {
     timezone: config.timezone,
     telegramConfigured: Boolean(config.telegramBotToken),
+    userSettingsStorageConfigured: Boolean(config.userDatabasePath),
     notionConfigured: Boolean(
       config.notionApiKey &&
         config.notionBudgetDatabaseId &&

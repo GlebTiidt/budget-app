@@ -1,10 +1,25 @@
-import { Bot } from "grammy";
+import { Bot, InlineKeyboard } from "grammy";
 import {
   ACCOUNTS,
   CURRENCIES,
   TRANSACTION_CATEGORIES
 } from "../../budget/catalog.js";
+import {
+  calculateBudgetPreviewSummary,
+  type BudgetPreviewSummary
+} from "../../budget/previewSummary.js";
+import {
+  isSupportedCurrency,
+  type SupportedCurrency,
+  type UserSettings,
+  type UserSettingsRepository
+} from "../../budget/userSettings.js";
 import type { AppConfig } from "../../config/loadConfig.js";
+import { createConfiguredUserSettingsRepository } from "../../storage/configuredUserSettingsRepository.js";
+import {
+  createFrankfurterCurrencyConverter,
+  type CurrencyConverter
+} from "../currency/frankfurterCurrencyConverter.js";
 import {
   createOpenAiTransactionParser,
   type ParsedBalanceObservationDraft,
@@ -20,6 +35,14 @@ export type TelegramBot = {
 
 type TelegramPreviewBotOptions = {
   parser?: TransactionTextParser;
+  currencyConverter?: CurrencyConverter;
+  userSettingsRepository?: UserSettingsRepository;
+};
+
+type BudgetPreviewFormattingOptions = {
+  baseCurrency?: SupportedCurrency;
+  summary?: BudgetPreviewSummary;
+  summaryUnavailable?: boolean;
 };
 
 type PreviewAction = "confirm" | "correct" | "cancel";
@@ -38,6 +61,12 @@ const previewReplyOptions = {
   parse_mode: "HTML" as const,
   reply_markup: previewReplyMarkup
 };
+const telegramCommands = [
+  { command: "start", description: "Начать работу" },
+  { command: "settings", description: "Настройки" },
+  { command: "reports", description: "Доходы и расходы" },
+  { command: "help", description: "Как пользоваться ботом" }
+];
 
 export function createTelegramPreviewBot(
   config: AppConfig,
@@ -61,6 +90,11 @@ export function createTelegramPreviewBot(
       accounts: [...ACCOUNTS],
       currencies: [...CURRENCIES]
     });
+  const currencyConverter =
+    options.currencyConverter ?? createFrankfurterCurrencyConverter();
+  const userSettingsRepository =
+    options.userSettingsRepository ??
+    createConfiguredUserSettingsRepository(config);
   const bot = new Bot(config.telegramBotToken);
 
   bot.use(async (ctx, next) => {
@@ -77,34 +111,93 @@ export function createTelegramPreviewBot(
   });
 
   bot.command("start", async (ctx) => {
-    await ctx.reply(
-      [
-        "Привет! Я тестовая версия бюджетного помощника.",
-        "",
-        "Напишите одну или несколько операций обычным языком, например:",
-        "Получил 500 USD за фриланс, потом заплатил 120к донгов за кофе по QR.",
-        "",
-        "Я покажу все черновики одним сообщением и отдельно отмечу, какие данные нужно уточнить.",
-        "Пока ничего не запишу в Notion."
-      ].join("\n")
-    );
+    const telegramUserId = requireTelegramUserId(ctx.from?.id);
+    const settings =
+      await userSettingsRepository.findByTelegramUserId(telegramUserId);
+
+    if (!settings) {
+      await ctx.reply(formatCurrencyOnboarding(), {
+        parse_mode: "HTML",
+        reply_markup: createCurrencyKeyboard()
+      });
+      return;
+    }
+
+    if (!settings.onboardingHelpShown) {
+      await userSettingsRepository.save({
+        ...settings,
+        onboardingHelpShown: true
+      });
+      await ctx.reply(formatFirstCurrencySelection(settings.baseCurrency), {
+        parse_mode: "HTML"
+      });
+      return;
+    }
+
+    await ctx.reply(formatWelcomeBack(settings.baseCurrency), {
+      parse_mode: "HTML"
+    });
   });
 
   bot.command("help", async (ctx) => {
-    await ctx.reply(
-      [
-        "Сейчас можно тестировать распознавание одной или нескольких операций в сообщении.",
-        "Для каждой операции укажите сумму, валюту и назначение; для перевода напишите оба счёта.",
-        "Если валюта, категория или счёт пропущены, я перечислю вопросы по номерам транзакций.",
-        "",
-        "Примеры:",
-        "• Вчера продукты 350к VND по QR",
-        "• Получил 500 USD за фриланс",
-        "• Сегодня бензин 100к донгов",
-        "• Перевёл 177 USD с Crypto на Вьетнамский счёт",
-        "",
-        "Это preview: подтверждение пока не сохраняет данные в Notion."
-      ].join("\n")
+    await ctx.reply(formatHelpMessage(), { parse_mode: "HTML" });
+  });
+
+  bot.command("settings", async (ctx) => {
+    const telegramUserId = requireTelegramUserId(ctx.from?.id);
+    const settings =
+      await userSettingsRepository.findByTelegramUserId(telegramUserId);
+    await ctx.reply(formatSettingsMessage(settings), {
+      parse_mode: "HTML",
+      reply_markup: createCurrencyKeyboard()
+    });
+  });
+
+  bot.command("reports", async (ctx) => {
+    if (!config.reportsWebAppUrl) {
+      await ctx.reply(
+        "Диаграммы уже подготовлены, но ссылка на них ещё не подключена к этому серверу."
+      );
+      return;
+    }
+
+    await ctx.reply("Я собрал доходы и расходы по месяцам. Откройте отчёт и выберите месяц и вид диаграммы, который сейчас удобнее.", {
+      reply_markup: new InlineKeyboard().webApp(
+        "Открыть диаграммы",
+        config.reportsWebAppUrl
+      )
+    });
+  });
+
+  bot.callbackQuery(/^settings:currency:([A-Z]{3})$/, async (ctx) => {
+    const currency = ctx.match[1] ?? "";
+    if (!isSupportedCurrency(currency)) {
+      await ctx.answerCallbackQuery({ text: "Эта валюта пока не поддерживается." });
+      return;
+    }
+
+    const telegramUserId = requireTelegramUserId(ctx.from?.id);
+    const previous =
+      await userSettingsRepository.findByTelegramUserId(telegramUserId);
+    const isFirstSelection = previous === null;
+    await userSettingsRepository.save({
+      telegramUserId,
+      baseCurrency: currency,
+      onboardingHelpShown: previous?.onboardingHelpShown ?? true
+    });
+    await ctx.answerCallbackQuery({ text: `Основная валюта: ${currency}` });
+    await ctx.editMessageText(
+      isFirstSelection
+        ? formatFirstCurrencySelection(currency)
+        : formatSettingsMessage({
+            telegramUserId,
+            baseCurrency: currency,
+            onboardingHelpShown: previous.onboardingHelpShown
+          }),
+      {
+        parse_mode: "HTML",
+        reply_markup: createCurrencyKeyboard()
+      }
     );
   });
 
@@ -160,9 +253,19 @@ export function createTelegramPreviewBot(
   );
 
   bot.on("message:text", async (ctx) => {
-    await ctx.replyWithChatAction("typing");
-
     try {
+      const telegramUserId = requireTelegramUserId(ctx.from?.id);
+      const settings =
+        await userSettingsRepository.findByTelegramUserId(telegramUserId);
+      if (!settings) {
+        await ctx.reply(
+          "Сначала выберите основную валюту — в ней я буду показывать общий итог.",
+          { reply_markup: createCurrencyKeyboard() }
+        );
+        return;
+      }
+
+      await ctx.replyWithChatAction("typing");
       const repliedPreview = getRepliedPreviewText(ctx.message.reply_to_message);
       if (repliedPreview) {
         const instruction = ctx.message.text.trim();
@@ -183,7 +286,14 @@ export function createTelegramPreviewBot(
 
         try {
           const revised = await parser.revise(repliedPreview, instruction);
-          await ctx.reply(formatBudgetMessagePreview(revised), previewReplyOptions);
+          await ctx.reply(
+            await formatUserBudgetMessagePreview(
+              revised,
+              settings.baseCurrency,
+              currencyConverter
+            ),
+            previewReplyOptions
+          );
         } catch (error: unknown) {
           console.error(
             "Telegram preview revision failed",
@@ -200,7 +310,11 @@ export function createTelegramPreviewBot(
       }
 
       const parsed = await parser.parse(ctx.message.text);
-      const preview = formatBudgetMessagePreview(parsed);
+      const preview = await formatUserBudgetMessagePreview(
+        parsed,
+        settings.baseCurrency,
+        currencyConverter
+      );
 
       await ctx.reply(preview, previewReplyOptions);
     } catch (error: unknown) {
@@ -218,16 +332,24 @@ export function createTelegramPreviewBot(
 }
 
 export function createTelegramBot(config: AppConfig): TelegramBot {
-  const bot = createTelegramPreviewBot(config);
+  const userSettingsRepository = createConfiguredUserSettingsRepository(config);
+  const bot = createTelegramPreviewBot(config, { userSettingsRepository });
+  let stopped = false;
 
   return {
     async start() {
+      await bot.api.setMyCommands(telegramCommands);
       await bot.start({
         allowed_updates: ["message", "callback_query"]
       });
     },
     async stop() {
+      if (stopped) {
+        return;
+      }
+      stopped = true;
       await bot.stop();
+      userSettingsRepository.close();
     }
   };
 }
@@ -239,7 +361,10 @@ export function isTelegramUserAllowed(
   return userId !== undefined && allowedUserIds.includes(String(userId));
 }
 
-export function formatBudgetMessagePreview(parsed: ParsedBudgetMessageDraft): string {
+export function formatBudgetMessagePreview(
+  parsed: ParsedBudgetMessageDraft,
+  options: BudgetPreviewFormattingOptions = {}
+): string {
   if (parsed.transactions.length === 0 && parsed.balanceObservations.length === 0) {
     const clarificationLines = parsed.ambiguities.map(
       (item) => `• ${escapeTelegramHtml(normalizeText(item))}`
@@ -254,17 +379,18 @@ export function formatBudgetMessagePreview(parsed: ParsedBudgetMessageDraft): st
     ].join("");
   }
 
-  const detailed = buildBudgetMessagePreview(parsed, true);
+  const detailed = buildBudgetMessagePreview(parsed, true, options);
   if (telegramRenderedText(detailed).length <= TELEGRAM_MESSAGE_LIMIT) {
     return detailed;
   }
 
-  return limitTelegramMessage(buildBudgetMessagePreview(parsed, false));
+  return limitTelegramMessage(buildBudgetMessagePreview(parsed, false, options));
 }
 
 function buildBudgetMessagePreview(
   parsed: ParsedBudgetMessageDraft,
-  includeDetails: boolean
+  includeDetails: boolean,
+  options: BudgetPreviewFormattingOptions
 ): string {
   const sections: string[] = [
     "<b>Вот что я понял из сообщения:</b>"
@@ -297,16 +423,184 @@ function buildBudgetMessagePreview(
     sections.push(["<b>Осталось уточнить:</b>", ...clarifications].join("\n"));
   }
 
-  sections.push(
-    [
-      "<b>Всё совпало?</b> Напишите «всё верно».",
-      "Хотите что-то поправить? Просто напишите, например: «для всех счёт Вьетнамский счёт», «3: валюта USD» или «отмени 4».",
-      "Несколько изменений можно отправить с новой строки. Если написать «тоже», я повторю последнее изменение для следующего пункта. Остаток можно поправить по номеру с буквой Б, например: «Б1: счёт Карта»."
-    ].join("\n"),
-    PREVIEW_WARNING
-  );
+  sections.push("<b>Всё совпало?</b> Напишите «всё верно» или просто скажите, что поправить.");
+
+  const summary = formatBudgetPreviewSummary(options);
+  if (summary) {
+    sections.push(summary);
+  }
+
+  sections.push(PREVIEW_WARNING);
 
   return sections.join("\n\n");
+}
+
+async function formatUserBudgetMessagePreview(
+  parsed: ParsedBudgetMessageDraft,
+  baseCurrency: SupportedCurrency,
+  currencyConverter: CurrencyConverter
+): Promise<string> {
+  try {
+    const summary = await calculateBudgetPreviewSummary(
+      parsed,
+      baseCurrency,
+      async (input) =>
+        (
+          await currencyConverter.convert({
+            amount: input.amount,
+            from: input.from,
+            to: input.to,
+            occurredOn: input.occurredOn
+          })
+        ).convertedAmount
+    );
+    return formatBudgetMessagePreview(parsed, { baseCurrency, summary });
+  } catch (error: unknown) {
+    console.error(
+      "Telegram preview currency summary failed",
+      error instanceof Error ? error.message : "unknown error"
+    );
+    return formatBudgetMessagePreview(parsed, {
+      baseCurrency,
+      summaryUnavailable: true
+    });
+  }
+}
+
+function formatBudgetPreviewSummary(
+  options: BudgetPreviewFormattingOptions
+): string | null {
+  if (!options.baseCurrency) {
+    return null;
+  }
+
+  const heading = `<b>Итог этого сообщения в ${options.baseCurrency}:</b>`;
+  if (!options.summary || options.summaryUnavailable) {
+    return [
+      heading,
+      `Сейчас не получилось пересчитать суммы в ${options.baseCurrency}. Попробуйте ещё раз чуть позже.`
+    ].join("\n");
+  }
+
+  const summary = options.summary;
+  const lines = [
+    heading,
+    `<b>Доход:</b> ${boldTelegramHtml(`${formatAmount(summary.income)} ${summary.baseCurrency}`)}`,
+    `<b>Расход:</b> ${boldTelegramHtml(`${formatAmount(summary.expense)} ${summary.baseCurrency}`)}`
+  ];
+
+  if (summary.observedBalances.length === 0) {
+    lines.push("<b>Остаток:</b> в этом сообщении не указан.");
+  } else {
+    for (const balance of summary.observedBalances) {
+      const account = balance.account
+        ? ` на «${escapeTelegramHtml(balance.account)}»`
+        : "";
+      lines.push(
+        `<b>Остаток${account}:</b> ${boldTelegramHtml(`${formatAmount(balance.amount)} ${summary.baseCurrency}`)}`
+      );
+    }
+  }
+
+  if (summary.incompleteOperationCount > 0) {
+    lines.push(
+      `Итог пока считает только заполненные операции: ${summary.incompleteOperationCount} ${pluralizeOperation(summary.incompleteOperationCount)} нужно уточнить.`
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function createCurrencyKeyboard(): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  for (const [index, currency] of CURRENCIES.entries()) {
+    keyboard.text(currency, `settings:currency:${currency}`);
+    if ((index + 1) % 3 === 0) {
+      keyboard.row();
+    }
+  }
+  return keyboard;
+}
+
+function formatCurrencyOnboarding(): string {
+  return [
+    "<b>Привет! Давайте сначала выберем основную валюту.</b>",
+    "В ней я буду показывать общий доход, расход и остаток. Сами операции по-прежнему можно писать в любой поддерживаемой валюте.",
+    "",
+    "Выбор всегда можно изменить в разделе /settings."
+  ].join("\n");
+}
+
+function formatFirstCurrencySelection(currency: SupportedCurrency): string {
+  return [
+    `<b>Готово — основная валюта ${currency}.</b>`,
+    "",
+    "Теперь напишите одну или несколько операций обычным сообщением. Например:",
+    "Получил 500 USD за фриланс, перевёл 200 USD с Crypto на Вьетнамский счёт и потратил 120к VND на кофе по QR.",
+    "",
+    "Я покажу понятный черновик. Если всё совпало, ответьте «всё верно». Если нет, можно написать: «3: валюта USD», «для всех счёт Карта» или «отмени 4».",
+    "Слово «тоже» повторяет последнее исправление для следующего пункта, а Б1, Б2 — это указанные остатки на счетах. Полная подсказка всегда есть в /help.",
+    "",
+    PREVIEW_WARNING
+  ].join("\n");
+}
+
+function formatWelcomeBack(currency: SupportedCurrency): string {
+  return [
+    "С возвращением! Напишите доходы, расходы или переводы обычным сообщением.",
+    `Общий итог покажу в ${currency}. Изменить валюту можно в /settings.`,
+    PREVIEW_WARNING
+  ].join("\n");
+}
+
+function formatSettingsMessage(settings: UserSettings | null): string {
+  return [
+    "<b>Настройки</b>",
+    settings
+      ? `Основная валюта: <b>${settings.baseCurrency}</b>`
+      : "Основная валюта ещё не выбрана.",
+    "В ней я показываю доход, расход и остаток. Выберите валюту ниже:"
+  ].join("\n");
+}
+
+function formatHelpMessage(): string {
+  return [
+    "<b>Как со мной работать</b>",
+    "Напишите одну или несколько операций обычным сообщением. Для перевода назовите оба счёта.",
+    "",
+    "Примеры:",
+    "• Вчера продукты 350к VND по QR",
+    "• Получил 500 USD за фриланс",
+    "• Перевёл 177 USD с Crypto на Вьетнамский счёт",
+    "",
+    "После черновика можно ответить «всё верно» или написать исправление: «3: валюта USD», «для всех счёт Карта», «отмени 4». Слово «тоже» повторяет последнее исправление для следующего пункта, а Б1, Б2 — это указанные остатки на счетах.",
+    "Основная валюта меняется в /settings.",
+    "Доходы и расходы на диаграммах открываются через /reports.",
+    "",
+    PREVIEW_WARNING
+  ].join("\n");
+}
+
+function requireTelegramUserId(userId: number | undefined): string {
+  if (userId === undefined) {
+    throw new Error("Telegram user ID is missing.");
+  }
+  return String(userId);
+}
+
+function pluralizeOperation(count: number): string {
+  const lastTwo = count % 100;
+  const last = count % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) {
+    return "операций";
+  }
+  if (last === 1) {
+    return "операцию";
+  }
+  if (last >= 2 && last <= 4) {
+    return "операции";
+  }
+  return "операций";
 }
 
 function formatCombinedTransaction(

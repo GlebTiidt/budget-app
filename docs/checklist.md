@@ -5,8 +5,8 @@ This file is the single source of truth for project progress. A checked item mus
 ## Confirmed Product Decisions
 
 - [x] Telegram is the primary user interface.
-- [x] Notion is the first transaction store and human-readable ledger.
-- [x] EUR is the reporting and base currency.
+- [x] Notion is the master's private transaction store and human-readable ledger; every other user must use isolated application storage.
+- [x] Every user has one base/reporting currency selected during onboarding; the supported initial choices are `USD`, `RUB`, `VND`, `AUD`, and `EUR`.
 - [x] Inputs may use multiple fiat currencies.
 - [x] Exchange rates use the transaction date.
 - [x] Timezone is `Asia/Ho_Chi_Minh`.
@@ -30,6 +30,8 @@ This file is the single source of truth for project progress. A checked item mus
 - [x] Add `TELEGRAM_BOT_TOKEN` to Vercel Production and Development environment variables.
 - [x] Determine the owner's numeric Telegram user ID and add it to local `TELEGRAM_ALLOWED_USER_IDS` without committing the value.
 - [x] Add `TELEGRAM_ALLOWED_USER_IDS` to Vercel Production and Development environment variables.
+- [x] Choose one dedicated server with a persistent disk as the target runtime for user settings; keep Vercel as the owner's preview rather than the user-data persistence layer.
+- [ ] Provision the dedicated server, persistent volume, production `USER_DATABASE_PATH`, encrypted SQLite-safe backups, and a tested restore procedure.
 
 Exit condition: the bot token and owner allowlist are configured in both environments without any secret entering Git.
 
@@ -40,9 +42,9 @@ Exit condition: the bot token and owner allowlist are configured in both environ
 - [x] Confirm income categories: `Фриланс` and `Работа`.
 - [x] Treat fuel and bike rental as `Транспорт`; preserve `Бензин` and `Аренда байка` in the comment instead of creating categories.
 - [x] Confirm the accounts: `Наличные`, `Карта`, `Сбережения`, `Вьетнамский счёт`, and `Crypto`; Vietnamese QR payments use `Вьетнамский счёт`, and cryptocurrency holdings, wallets, and payments use `Crypto`.
-- [ ] Enter the opening total balance in EUR and the date from which balance tracking begins. Blocked: the current account observation is not an exact total opening anchor.
-- [x] Track one total EUR balance in the MVP rather than separate per-account balances.
-- [x] Include transfers between supported personal accounts; require a source and destination account while keeping the total EUR balance unchanged.
+- [ ] Enter the opening total balance in the selected base currency and the date from which balance tracking begins. Blocked: the current account observation is not an exact total opening anchor.
+- [x] Track one total balance in each user's selected base currency in the MVP rather than separate calculated per-account balances.
+- [x] Include transfers between supported personal accounts; require a source and destination account while keeping the user's total balance unchanged.
 - [x] Provide 11 representative Telegram transaction messages, including slang, abbreviations, and a crypto-account example; keep the reproducible set in `scripts/verifyOpenAiParser.ts`.
 - [x] Discard raw Telegram text after the normalized transaction is confirmed.
 
@@ -53,7 +55,8 @@ Exit condition: currencies, categories, accounts, opening-balance policy, transf
 - [x] Create the `Транзакции` database in Notion and verify API access.
 - [x] Add and verify the MVP schema: `Операция`, `Дата`, `Тип`, `Исходная сумма`, `Валюта`, `Курс к EUR`, `Сумма EUR`, `Категория`, `Счёт`, `Счёт назначения`, `Комментарий`, and `Telegram ID`.
 - [x] Add and verify the number property `Остаток EUR` containing the running balance after each transaction.
-- [ ] Store the opening EUR balance and its effective date in a single controlled settings location, not as an ordinary expense or income.
+- [ ] Migrate the owner's fixed `Курс к EUR`, `Сумма EUR`, and `Остаток EUR` fields to a verified generic base-currency representation before a non-EUR owner setting can enter the real save flow.
+- [ ] Store the opening balance, its currency, and its effective date in a single controlled settings location, not as an ordinary expense or income.
 - [ ] Store confirmed balance observations separately from transactions so reconciliation never fabricates income or expense.
 - [ ] Create month, category, income, and expense views.
 - [x] Create a private Notion integration with read, insert, and update content access; verify its token with Notion `users/me`.
@@ -65,7 +68,7 @@ Exit condition: currencies, categories, accounts, opening-balance policy, transf
 - [ ] Implement the Notion transaction mapper and repository.
 - [ ] Verify an idempotent test write and delete the test row manually.
 
-Exit condition: one verified transaction can be written exactly once through the repository with its resulting EUR balance.
+Exit condition: one verified transaction can be written exactly once through the repository with its resulting balance in the recorded base currency.
 
 ## Phase 3 — OpenAI Text Processing
 
@@ -104,28 +107,34 @@ Exit condition: every sample produces a valid draft or a clear clarification req
 ## Phase 4 — Currency Conversion
 
 - [x] Implement the Frankfurter v2 client without an API key.
-- [x] Convert from the original currency to EUR using the transaction date.
-- [x] Use rate `1` for EUR transactions.
+- [x] Convert from the original currency to an explicit target currency using the transaction date; Telegram supplies the user's selected base currency.
+- [x] Use rate `1` for same-currency transactions.
 - [x] Define weekend/holiday behavior: accept the same-day rate when provided, otherwise the latest available prior rate; reject future rates.
-- [x] Return original amount, currency, transaction date, applied rate, rate date, and EUR amount for the Notion mapper.
+- [x] Return original amount, currency, transaction date, target currency, applied rate, rate date, and converted amount for storage mappers.
 - [x] Add tests for EUR, USD, VND, and a non-trading day.
 
 Exit condition: tested conversions are deterministic and retain all audit fields.
 
 ## Phase 5 — Telegram Transaction Flow
 
-- [ ] Wire grammY to the configured bot token.
-- [ ] Reject every Telegram user not present in `TELEGRAM_ALLOWED_USER_IDS`.
-- [ ] Implement `/start` and `/help`.
-- [ ] Parse an informal message through OpenAI.
-- [ ] Show the normalized draft and confirmation buttons.
-- [ ] Convert the confirmed amount to EUR.
-- [ ] Calculate `Остаток EUR` after every confirmed transaction: income adds, expense subtracts, and a transfer does not change the total balance.
+- [x] Add a persistent `user_settings` SQLite table keyed by Telegram user ID and isolate it behind `UserSettingsRepository`.
+- [x] Add an explicit master-account repository route: only the master Telegram ID may persist its currency and onboarding flags in the private Notion `Настройки мастера` data source; other users route to SQLite.
+- [x] Require an initial base-currency choice before parsing and add `/settings` with `USD`, `RUB`, `VND`, `AUD`, and `EUR` choices.
+- [x] Add `/start`, `/settings`, `/reports`, and `/help` command definitions for the Telegram menu.
+- [x] Show preview income, expense, and explicit observed account balances in the user's base currency; exclude transfers and never invent a balance when none was stated.
+- [x] Keep routine preview guidance short and move detailed correction help to onboarding and `/help`.
+- [x] Wire grammY to the configured bot token.
+- [x] Reject every Telegram user not present in `TELEGRAM_ALLOWED_USER_IDS`.
+- [x] Implement `/start` and `/help`.
+- [x] Parse an informal message through OpenAI.
+- [x] Show the normalized draft and accept confirmation, corrections, or cancellation through an ordinary text reply.
+- [ ] Convert the confirmed amount to the user's selected base currency.
+- [ ] Calculate the running balance in that base currency after every confirmed transaction: income adds, expense subtracts, and a transfer does not change the total balance.
 - [ ] Recalculate the affected running balances after a backdated transaction is inserted, corrected, or deleted.
 - [ ] Save the confirmed transaction to Notion.
 - [ ] Prevent duplicate writes using the Telegram message ID.
-- [ ] Return a concise receipt containing original amount, EUR amount, remaining EUR balance, category, account route when applicable, and date.
-- [ ] Accept an observed current balance for a named account in a supported currency and compare its converted EUR value with the calculated balance.
+- [ ] Return a concise receipt containing original amount, converted base-currency amount, remaining balance, category, account route when applicable, and date.
+- [ ] Accept an observed current balance for a named account in a supported currency and compare its converted base-currency value with the calculated balance.
 - [ ] When the observed balance is lower, explain the difference conversationally and collect one or more post-factum expense drafts.
 - [ ] Require independent confirmation for every recalled expense, show the remaining unexplained difference, and allow the user to stop without inventing an adjustment.
 
@@ -133,15 +142,20 @@ Exit condition: one real Telegram message completes the full confirmed path into
 
 ## Phase 6 — Monthly Reports and Charts
 
-- [x] Add a QuickChart PNG renderer for EUR totals by category.
-- [ ] Query confirmed Notion transactions for a selected month.
-- [ ] Aggregate expenses by category in application code.
+- [x] Add a QuickChart PNG renderer for the owner's current EUR totals by category; generalizing its label to each user's base currency remains pending.
+- [x] Select pinned self-hosted Chart.js 4.5.1 for interactive animation; its MIT license has no per-user fee.
+- [x] Add a signed Telegram Mini App authorization validator and require both the explicit master ID and owner allowlist before reading report data.
+- [x] Add a read-only Notion master-report repository with pagination and month filtering against the current data source API.
+- [x] Aggregate daily income, expense, net difference, and expense categories in application code while excluding transfers.
+- [x] Add a Telegram `/reports` entry and a Mini App with month selection plus animated bar, line, and doughnut views.
+- [x] Query the master's Notion transactions for a selected month with pagination; the live August 2026 read-only smoke query succeeded with an empty result set.
+- [x] Aggregate expenses by category in application code.
 - [ ] Implement `/month` summary text.
 - [ ] Implement `/chart` doughnut chart and send the PNG to Telegram.
-- [ ] Add income-versus-expense totals and remaining balance.
-- [ ] Show the latest verified `Остаток EUR` as the current available total.
-- [ ] Handle an empty month without generating a misleading chart.
-- [ ] Optionally add an interactive Chart.js dashboard on Vercel after the Telegram report is stable.
+- [x] Add income-versus-expense totals and net difference to the animated master report; a verified running balance remains pending.
+- [ ] Show the latest verified running balance in the user's base currency as the current available total.
+- [x] Handle an empty month with an explicit empty state instead of a misleading chart.
+- [x] Add the owner-only interactive Chart.js dashboard on the personal Vercel preview; future user reports remain on the dedicated application server.
 
 Exit condition: the bot returns verified monthly totals and a chart whose segments match those totals.
 
@@ -150,8 +164,8 @@ Exit condition: the bot returns verified monthly totals and a chart whose segmen
 - [ ] Add unit tests for config, validation, AI result normalization, conversion, aggregation, and chart configuration.
 - [ ] Add running-balance tests for income, expense, transfer, same-day ordering, and backdated corrections.
 - [ ] Add integration tests with mocked OpenAI, Frankfurter, Notion, QuickChart, and Telegram responses.
-- [ ] Run `npm run typecheck`.
-- [ ] Run `npm test`.
+- [x] Run `npm run typecheck` after the currency, settings, and master-report implementation.
+- [x] Run `npm test`; all 48 local tests pass after the currency, settings isolation, Notion report, Telegram Mini App authorization, and Chart.js work.
 - [x] Add the Telegram webhook HTTP endpoint for Vercel and register the production URL with Telegram.
 - [x] Deploy the owner-only parser preview to Vercel Production and register its Telegram webhook.
 - [ ] Perform an end-to-end production smoke test.
@@ -165,7 +179,7 @@ Exit condition: the production bot passes the smoke test and can be safely opera
 - [ ] Choose the minimum supported iOS version after reviewing current device requirements.
 - [ ] Create a separate Xcode/SwiftUI app target without moving backend domain logic into the client.
 - [ ] Define the visual language, design tokens, navigation, transaction composer, confirmation sheet, history, and reports.
-- [ ] Add a private authenticated API surface on Vercel for the iOS client.
+- [ ] Add a private authenticated API surface on the dedicated server for the iOS client.
 - [ ] Keep Telegram, Notion, OpenAI, and currency-provider secrets on the server; never embed them in the app bundle.
 - [ ] Implement text transaction entry using the same backend validation and confirmation rules as Telegram.
 - [ ] Implement monthly history and chart views using server-provided normalized data.
@@ -194,7 +208,8 @@ Detailed future category and idea-inbox UX is captured in [`docs/ideas-checklist
 
 - [ ] Decide whether access is invite-only, owner-approved, or open registration; implement access grant and revocation.
 - [ ] Keep the owner's existing Notion workspace private and confirm that no other user's transactions are written there.
-- [ ] Choose a managed storage strategy; document limits, backups, recovery, expected cost, and migration path, and reject local files as persistent Vercel storage.
+- [x] Choose and document the first user-settings storage strategy: one SQLite database on a dedicated server's persistent disk, one row per Telegram ID, one writer instance, and a PostgreSQL migration boundary before horizontal scaling.
+- [ ] Provision and verify SQLite-safe backups and recovery on the dedicated server before treating user settings as production-ready.
 - [ ] Decide whether the owner continues using Notion while other users use the database, or whether all users eventually move to one backend.
 - [ ] Design user-scoped records for profiles, transactions, categories, accounts, opening balances, preferences, and Telegram identities.
 - [ ] Enforce data isolation in every query and database constraint so one Telegram user can never read or modify another user's budget.
@@ -215,6 +230,7 @@ The multi-operation preview is deployed and its health endpoint and webhook are 
 ### Owner Smoke Test
 
 - [ ] Open [`@budgetgleb_bot`](https://t.me/budgetgleb_bot) and send `/start`; verify the bot explains that it is a preview and will not write to Notion.
+- [ ] Open `/reports` from Telegram; verify the selected month shows only the master's Notion data and that bar, line, and doughnut choices animate without exposing the page outside the owner allowlist.
 - [ ] Send `/help`; verify it returns concise examples and repeats the no-write warning.
 - [ ] Send `Сегодня заплатил 120к донгов за кофе по QR`; expect an expense in `VND`, category `Кофешоп`, account `Вьетнамский счёт`, and today's local date.
 - [ ] Send an intentionally incomplete example such as `Потратил 50`; expect a clarification request or an explicit low-confidence draft with ambiguities rather than silent guessing.
@@ -237,9 +253,9 @@ The multi-operation preview is deployed and its health endpoint and webhook are 
 
 ## Current Next Actions
 
-1. Complete the owner production Telegram smoke test, including the synthetic multi-operation case, inspect webhook/OpenAI logs, and verify Notion still has no new rows.
-2. Provide an exact opening balance anchor and effective date; use one total EUR balance for the MVP.
-3. Create the remaining Notion views and implement the first verified repository write.
-4. Confirm OpenAI API billing safeguards before enabling the save flow.
-5. Wire the tested EUR converter and running-balance calculation into the confirmed Telegram transaction flow.
-6. Plan the Phase 10 storage approach, but keep implementation of Phases 8–10 parked until the Telegram MVP completes its production smoke test.
+1. Deploy the owner preview, register the four Telegram menu commands, and complete the `/start`, `/settings`, `/reports`, and message-summary smoke tests without writing financial data to Notion.
+2. Provision the dedicated server and persistent SQLite volume, configure `USER_DATABASE_PATH`, and verify backup plus restore before relying on saved non-master profiles.
+3. Provide an exact opening balance anchor and effective date in the selected base currency.
+4. Migrate the owner's fixed-EUR Notion fields to a generic verified base-currency representation before enabling non-EUR confirmed writes.
+5. Create the remaining Notion views and implement the first verified repository write.
+6. Confirm OpenAI API billing safeguards before enabling the save flow.
