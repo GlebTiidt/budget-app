@@ -75,7 +75,9 @@ This is the living rules file for the budget app. We update it when decisions be
 ## Telegram Rules
 
 - Only allow configured Telegram user IDs.
-- Bot replies must be short and action-oriented.
+- Bot replies must sound like a concise, supportive conversation with a trusted companion: use ordinary first-person language, ask natural questions, and avoid robotic headings, bookkeeping jargon, or command-manual phrasing when a plain explanation works.
+- Bot replies must remain short and action-oriented; warmth must not obscure amounts, currencies, dates, account routes, uncertainty, or the next action.
+- Render Telegram previews as escaped HTML: make section headings, amount-plus-currency values, and categories bold, and escape every model-derived description, note, category, account, and ambiguity before sending it to Telegram.
 - Parsing failures should ask for a corrected message instead of silently guessing.
 - Show all drafts and balance observations from one user message in one numbered Telegram preview and manage it through a normal text reply, without an inline button grid.
 - Collect missing amount, currency, category, account, and other ambiguities into one numbered clarification block instead of sending separate prompts.

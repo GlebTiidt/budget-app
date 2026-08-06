@@ -26,11 +26,17 @@ type PreviewAction = "confirm" | "correct" | "cancel";
 type PreviewItemKind = "transaction" | "balance";
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
-const PREVIEW_WARNING = "Preview: в Notion ничего не записано.";
+const PREVIEW_WARNING =
+  "Пока это только черновик — в Notion ничего не записано.";
+const LEGACY_PREVIEW_WARNING = "Preview: в Notion ничего не записано.";
 const previewReplyMarkup = {
   force_reply: true as const,
   selective: true,
   input_field_placeholder: "Например: для всех счёт Карта"
+};
+const previewReplyOptions = {
+  parse_mode: "HTML" as const,
+  reply_markup: previewReplyMarkup
 };
 
 export function createTelegramPreviewBot(
@@ -177,9 +183,7 @@ export function createTelegramPreviewBot(
 
         try {
           const revised = await parser.revise(repliedPreview, instruction);
-          await ctx.reply(formatBudgetMessagePreview(revised), {
-            reply_markup: previewReplyMarkup
-          });
+          await ctx.reply(formatBudgetMessagePreview(revised), previewReplyOptions);
         } catch (error: unknown) {
           console.error(
             "Telegram preview revision failed",
@@ -198,9 +202,7 @@ export function createTelegramPreviewBot(
       const parsed = await parser.parse(ctx.message.text);
       const preview = formatBudgetMessagePreview(parsed);
 
-      await ctx.reply(preview, {
-        reply_markup: previewReplyMarkup
-      });
+      await ctx.reply(preview, previewReplyOptions);
     } catch (error: unknown) {
       console.error(
         "Telegram preview parsing failed",
@@ -240,20 +242,20 @@ export function isTelegramUserAllowed(
 export function formatBudgetMessagePreview(parsed: ParsedBudgetMessageDraft): string {
   if (parsed.transactions.length === 0 && parsed.balanceObservations.length === 0) {
     const clarificationLines = parsed.ambiguities.map(
-      (item) => `• ${normalizeText(item)}`
+      (item) => `• ${escapeTelegramHtml(normalizeText(item))}`
     );
 
     return [
       "Не нашёл ни одной финансовой операции или наблюдения баланса.",
       clarificationLines.length
-        ? `\nНужно уточнить:\n${clarificationLines.join("\n")}`
+        ? `\n<b>Осталось уточнить:</b>\n${clarificationLines.join("\n")}`
         : " Напишите сумму, валюту и назначение точнее.",
       `\n${PREVIEW_WARNING}`
     ].join("");
   }
 
   const detailed = buildBudgetMessagePreview(parsed, true);
-  if (detailed.length <= TELEGRAM_MESSAGE_LIMIT) {
+  if (telegramRenderedText(detailed).length <= TELEGRAM_MESSAGE_LIMIT) {
     return detailed;
   }
 
@@ -265,13 +267,13 @@ function buildBudgetMessagePreview(
   includeDetails: boolean
 ): string {
   const sections: string[] = [
-    `Транзакции: ${parsed.transactions.length} · Наблюдения баланса: ${parsed.balanceObservations.length}`
+    "<b>Вот что я понял из сообщения:</b>"
   ];
 
   if (parsed.transactions.length) {
     sections.push(
       [
-        "Транзакции:",
+        "<b>Операции:</b>",
         ...parsed.transactions.map((draft, index) =>
           formatCombinedTransaction(draft, index + 1, includeDetails)
         )
@@ -282,7 +284,7 @@ function buildBudgetMessagePreview(
   if (parsed.balanceObservations.length) {
     sections.push(
       [
-        "Наблюдения баланса (не доход и не расход):",
+        "<b>Ещё вижу остаток на счёте.</b> Держу его отдельно, чтобы не считать доходом или расходом:",
         ...parsed.balanceObservations.map((observation, index) =>
           formatCombinedBalanceObservation(observation, index + 1)
         )
@@ -292,13 +294,14 @@ function buildBudgetMessagePreview(
 
   const clarifications = collectClarificationRequests(parsed, includeDetails);
   if (clarifications.length) {
-    sections.push(["Нужно уточнить:", ...clarifications].join("\n"));
+    sections.push(["<b>Осталось уточнить:</b>", ...clarifications].join("\n"));
   }
 
   sections.push(
     [
-      "Ответьте: «всё верно», «для всех счёт Вьетнамский счёт», «3: валюта USD» или «отмени 4».",
-      "Можно перечислять изменения с новой строки; «тоже» повторяет последнее изменение для следующего пункта. «Б» — наблюдение баланса."
+      "<b>Всё совпало?</b> Напишите «всё верно».",
+      "Хотите что-то поправить? Просто напишите, например: «для всех счёт Вьетнамский счёт», «3: валюта USD» или «отмени 4».",
+      "Несколько изменений можно отправить с новой строки. Если написать «тоже», я повторю последнее изменение для следующего пункта. Остаток можно поправить по номеру с буквой Б, например: «Б1: счёт Карта»."
     ].join("\n"),
     PREVIEW_WARNING
   );
@@ -317,29 +320,28 @@ function formatCombinedTransaction(
     transfer: "Перевод"
   }[draft.direction];
   const fields = [
-    `${position}. ${direction} — ${formatDraftAmount(draft.amount, draft.currency)}`,
+    `${position}. ${direction} — ${boldTelegramHtml(formatDraftAmount(draft.amount, draft.currency))}`,
     formatIsoDate(draft.occurredOn)
   ];
 
   if (draft.direction === "transfer") {
     fields.push(
-      `${draft.account ?? "счёт-источник не указан"} → ${draft.destinationAccount ?? "счёт-получатель не указан"}`
+      `${escapeTelegramHtml(draft.account ?? "счёт-источник не указан")} → ${escapeTelegramHtml(draft.destinationAccount ?? "счёт-получатель не указан")}`
     );
   } else {
-    fields.push(draft.category ?? "категория не указана");
-    fields.push(draft.account ?? "счёт не указан");
+    fields.push(boldTelegramHtml(draft.category ?? "категория не указана"));
+    fields.push(escapeTelegramHtml(draft.account ?? "счёт не указан"));
   }
 
+  const description = includeDetails
+    ? normalizeText(draft.description)
+    : truncateText(draft.description, 36);
   fields.push(
-    `«${
-      includeDetails
-        ? normalizeText(draft.description)
-        : truncateText(draft.description, 36)
-    }»`
+    `«${escapeTelegramHtml(description)}»`
   );
 
   if (includeDetails && draft.note) {
-    fields.push(`комментарий: ${normalizeText(draft.note)}`);
+    fields.push(`комментарий: ${escapeTelegramHtml(normalizeText(draft.note))}`);
   }
   if (draft.confidence < 0.6) {
     fields.push("низкая уверенность");
@@ -352,17 +354,17 @@ function formatCombinedBalanceObservation(
   observation: ParsedBalanceObservationDraft,
   position: number
 ): string {
-  const fields = [
-    `Б${position}. ${formatAmount(observation.amount)} ${observation.currency}`,
-    formatIsoDate(observation.occurredOn),
-    observation.account ?? "счёт не указан"
-  ];
+  const amount = `${formatAmount(observation.amount)} ${observation.currency}`;
+  const date = formatIsoDate(observation.occurredOn);
+  const sentence = observation.account
+    ? `Б${position}. На счёте «${escapeTelegramHtml(observation.account)}» осталось ${boldTelegramHtml(amount)} на ${date}.`
+    : `Б${position}. Остаток ${boldTelegramHtml(amount)} на ${date}; счёт пока не указан.`;
 
   if (observation.confidence < 0.6) {
-    fields.push("низкая уверенность");
+    return `${sentence} Тут я не до конца уверен.`;
   }
 
-  return fields.join(" · ");
+  return sentence;
 }
 
 function collectClarificationRequests(
@@ -398,12 +400,11 @@ function collectClarificationRequests(
     }
 
     if (missingFields.length) {
+      const description = includeDetails
+        ? normalizeText(draft.description)
+        : truncateText(draft.description, 48);
       requests.push(
-        `• Транзакция ${index + 1} «${
-          includeDetails
-            ? normalizeText(draft.description)
-            : truncateText(draft.description, 48)
-        }» — укажите ${joinRussianList(missingFields)}.`
+        `• Транзакция ${index + 1} «${escapeTelegramHtml(description)}» — укажите ${joinRussianList(missingFields)}.`
       );
     }
 
@@ -412,7 +413,7 @@ function collectClarificationRequests(
         (item) => !ambiguityConcernsMissingField(item, missingFields)
       )) {
         requests.push(
-          `• Транзакция ${index + 1} «${normalizeText(draft.description)}» — ${normalizeText(ambiguity)}`
+          `• Транзакция ${index + 1} «${escapeTelegramHtml(normalizeText(draft.description))}» — ${escapeTelegramHtml(normalizeText(ambiguity))}`
         );
       }
     }
@@ -431,7 +432,7 @@ function collectClarificationRequests(
         (item) => !ambiguityConcernsMissingField(item, missingFields)
       )) {
         requests.push(
-          `• Наблюдение баланса Б${index + 1} — ${normalizeText(ambiguity)}`
+          `• Наблюдение баланса Б${index + 1} — ${escapeTelegramHtml(normalizeText(ambiguity))}`
         );
       }
     }
@@ -442,7 +443,9 @@ function collectClarificationRequests(
       (item) =>
         !ambiguityConcernsMissingField(item, [...messageMissingFields])
     )) {
-      requests.push(`• По всему сообщению — ${normalizeText(ambiguity)}`);
+      requests.push(
+        `• По всему сообщению — ${escapeTelegramHtml(normalizeText(ambiguity))}`
+      );
     }
   }
 
@@ -517,12 +520,32 @@ function normalizeText(value: string): string {
 }
 
 function limitTelegramMessage(value: string): string {
-  if (value.length <= TELEGRAM_MESSAGE_LIMIT) {
+  const rendered = telegramRenderedText(value);
+  if (rendered.length <= TELEGRAM_MESSAGE_LIMIT) {
     return value;
   }
 
   const suffix = `\n\n… Часть длинных деталей сокращена.\n${PREVIEW_WARNING}`;
-  return `${value.slice(0, TELEGRAM_MESSAGE_LIMIT - suffix.length).trimEnd()}${suffix}`;
+  return `${rendered.slice(0, TELEGRAM_MESSAGE_LIMIT - suffix.length).trimEnd()}${suffix}`;
+}
+
+function boldTelegramHtml(value: string): string {
+  return `<b>${escapeTelegramHtml(value)}</b>`;
+}
+
+function escapeTelegramHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function telegramRenderedText(value: string): string {
+  return value
+    .replace(/<\/?b>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
 }
 
 function getRepliedPreviewText(
@@ -533,7 +556,8 @@ function getRepliedPreviewText(
   if (!replyToMessage?.from?.is_bot || !replyToMessage.text) {
     return null;
   }
-  return replyToMessage.text.includes(PREVIEW_WARNING)
+  return replyToMessage.text.includes(PREVIEW_WARNING) ||
+    replyToMessage.text.includes(LEGACY_PREVIEW_WARNING)
     ? replyToMessage.text
     : null;
 }

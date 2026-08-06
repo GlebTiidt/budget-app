@@ -89,6 +89,8 @@ Exit condition: one verified transaction can be written exactly once through the
 - [x] Test the parser against 11 synthetic representative messages with the live configured model and token-optimized settings; all 11 plus both reply-revision cases pass.
 - [x] Add deterministic fallback/error messages for incomplete or ambiguous input; missing transaction amount or currency remains explicit instead of being guessed.
 - [x] Show all drafts and balance observations from one input in one numbered Telegram preview without an inline button grid.
+- [x] Rewrite the combined preview in conversational Russian: explain balance observations in plain language, ask whether everything matches, and present corrections as natural examples instead of system instructions.
+- [x] Render preview headings, amount-plus-currency values, and categories in bold with safely escaped Telegram HTML.
 - [x] Ask for every missing amount, currency, category, or account in one numbered clarification block.
 - [x] Accept ordinary reply text for whole-preview confirmation, field corrections, and numbered cancellation; return a revised preview without writing to Notion.
 - [x] Apply sequential `тоже` replies through transactions and balance observations, prefer a supported final destination account, and avoid duplicate missing-field questions.

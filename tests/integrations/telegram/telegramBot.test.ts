@@ -49,11 +49,18 @@ test("formats all parsed items in one safe preview", () => {
     ambiguities: []
   });
 
-  assert.match(preview, /Транзакции: 2 · Наблюдения баланса: 1/);
-  assert.match(preview, /1\. Расход — 120[  ]000 VND/);
-  assert.match(preview, /2\. Доход — 50 USD/);
-  assert.match(preview, /Б1\. 20[  ]000 VND/);
-  assert.match(preview, /Наблюдения баланса \(не доход и не расход\)/);
+  assert.match(preview, /<b>Вот что я понял из сообщения:<\/b>/);
+  assert.match(preview, /<b>Операции:<\/b>/);
+  assert.match(preview, /1\. Расход — <b>120[  ]000 VND<\/b>/);
+  assert.match(preview, /2\. Доход — <b>50 USD<\/b>/);
+  assert.match(preview, /<b>Кофешоп<\/b>/);
+  assert.match(
+    preview,
+    /Б1\. На счёте «Вьетнамский счёт» осталось <b>20[  ]000 VND<\/b> на 04\.08\.2026\./
+  );
+  assert.match(preview, /Держу его отдельно, чтобы не считать доходом или расходом/);
+  assert.match(preview, /<b>Всё совпало\?<\/b> Напишите «всё верно»\./);
+  assert.match(preview, /Хотите что-то поправить\? Просто напишите/);
   assert.match(preview, /в Notion ничего не записано/);
 });
 
@@ -90,7 +97,7 @@ test("asks numbered follow-up questions for every missing field", () => {
     ambiguities: ["Для транзакции 1 счёт не определён однозначно"]
   });
 
-  assert.match(preview, /1\. Расход — 50, валюта не указана/);
+  assert.match(preview, /1\. Расход — <b>50, валюта не указана<\/b>/);
   assert.match(preview, /низкая уверенность/);
   assert.match(
     preview,
@@ -124,7 +131,10 @@ test("formats a personal transfer as a complete account route", () => {
     ambiguities: []
   });
 
-  assert.match(preview, /1\. Перевод — 177 USD.*Crypto → Вьетнамский счёт/);
+  assert.match(
+    preview,
+    /1\. Перевод — <b>177 USD<\/b>.*Crypto → Вьетнамский счёт/
+  );
   assert.match(
     preview,
     /Транзакция 2 «Перевод без получателя» — укажите счёт-получатель\./
@@ -151,6 +161,26 @@ test("keeps complete clarification text when the preview fits Telegram", () => {
   assert.doesNotMatch(preview, /эквивалента исходных…/);
 });
 
+test("escapes dynamic text before sending Telegram HTML", () => {
+  const preview = formatBudgetMessagePreview({
+    transactions: [
+      {
+        ...createDraft("expense"),
+        category: "Еда & напитки",
+        description: "Кофе <small>",
+        note: "Чек > ожиданий"
+      }
+    ],
+    balanceObservations: [],
+    ambiguities: []
+  });
+
+  assert.match(preview, /<b>Еда &amp; напитки<\/b>/);
+  assert.match(preview, /«Кофе &lt;small&gt;»/);
+  assert.match(preview, /комментарий: Чек &gt; ожиданий/);
+  assert.doesNotMatch(preview, /<small>/);
+});
+
 test("keeps a maximum-size batch inside one Telegram message", () => {
   const longText = "Очень длинное синтетическое описание ".repeat(20);
   const preview = formatBudgetMessagePreview({
@@ -166,7 +196,10 @@ test("keeps a maximum-size batch inside one Telegram message", () => {
   });
 
   assert.ok(preview.length <= 4096);
-  assert.match(preview, /Preview: в Notion ничего не записано\.$/);
+  assert.match(
+    preview,
+    /Пока это только черновик — в Notion ничего не записано\.$/
+  );
 });
 
 test("Telegram revises a combined preview from a normal text reply", async () => {
@@ -273,7 +306,11 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
   });
 
   assert.equal(sentMessages.length, 1);
-  assert.match(String(sentMessages[0]?.text), /Транзакции: 2/);
+  assert.equal(sentMessages[0]?.parse_mode, "HTML");
+  assert.match(
+    String(sentMessages[0]?.text),
+    /<b>Вот что я понял из сообщения:<\/b>/
+  );
   assert.match(String(sentMessages[0]?.text), /1\. Доход/);
   assert.match(String(sentMessages[0]?.text), /2\. Расход/);
   assert.match(String(sentMessages[0]?.text), /Б1\./);
@@ -315,7 +352,10 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
 
   assert.equal(sentMessages.length, 2);
   assert.equal(revisionCalls.length, 1);
-  assert.match(revisionCalls[0]!.preview, /Preview: в Notion ничего не записано/);
+  assert.match(
+    revisionCalls[0]!.preview,
+    /Пока это только черновик — в Notion ничего не записано/
+  );
   assert.equal(revisionCalls[0]!.instruction, "Для всех счёт Карта; отмени 2");
   assert.match(String(sentMessages[1]?.text), /1\. Доход.*Карта/);
   assert.doesNotMatch(String(sentMessages[1]?.text), /2\. Расход/);
