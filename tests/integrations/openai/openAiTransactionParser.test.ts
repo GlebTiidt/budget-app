@@ -41,6 +41,7 @@ test("normalizes a multi-transaction message without merging its operations", ()
         description: "OpenAI API"
       })
     ],
+    debtOperations: [],
     balanceObservations: [
       {
         amount: 20_000,
@@ -87,6 +88,7 @@ test("allows missing transaction amount or currency to remain explicit", () => {
         ambiguities: ["Сумма и валюта аванса не указаны"]
       })
     ],
+    debtOperations: [],
     balanceObservations: [],
     ambiguities: []
   });
@@ -111,6 +113,7 @@ test("normalizes both accounts of a personal transfer", () => {
         description: "Перевод аванса"
       })
     ],
+    debtOperations: [],
     balanceObservations: [],
     ambiguities: []
   });
@@ -122,11 +125,40 @@ test("normalizes both accounts of a personal transfer", () => {
   );
 });
 
+test("keeps four debt actions separate from income and expense", () => {
+  const parsed = normalizeParsedBudgetMessage({
+    transactions: [],
+    debtOperations: [
+      debtOperation({ action: "borrow", counterparty: " Петя " }),
+      debtOperation({ action: "repay_borrowed", counterparty: "Петя" }),
+      debtOperation({ action: "lend", counterparty: "Аня" }),
+      debtOperation({ action: "collect", counterparty: "Аня" })
+    ],
+    balanceObservations: [],
+    ambiguities: []
+  });
+
+  assert.deepEqual(
+    parsed.debtOperations.map(({ action, counterparty }) => ({
+      action,
+      counterparty
+    })),
+    [
+      { action: "borrow", counterparty: "Петя" },
+      { action: "repay_borrowed", counterparty: "Петя" },
+      { action: "lend", counterparty: "Аня" },
+      { action: "collect", counterparty: "Аня" }
+    ]
+  );
+  assert.equal(parsed.transactions.length, 0);
+});
+
 test("rejects invalid nested parser data before it reaches Telegram", () => {
   assert.throws(
     () =>
       normalizeParsedBudgetMessage({
         transactions: [transaction({ amount: -10 })],
+        debtOperations: [],
         balanceObservations: [],
         ambiguities: []
       }),
@@ -137,6 +169,7 @@ test("rejects invalid nested parser data before it reaches Telegram", () => {
     () =>
       normalizeParsedBudgetMessage({
         transactions: [],
+        debtOperations: [],
         balanceObservations: "not-an-array",
         ambiguities: []
       }),
@@ -154,6 +187,22 @@ function transaction(overrides: Record<string, unknown> = {}) {
     account: null,
     destinationAccount: null,
     description: "Тест",
+    note: null,
+    confidence: 0.9,
+    ambiguities: [],
+    ...overrides
+  };
+}
+
+function debtOperation(overrides: Record<string, unknown> = {}) {
+  return {
+    amount: 50,
+    currency: "USD",
+    action: "borrow",
+    occurredOn: "2026-08-04",
+    counterparty: null,
+    account: "Карта",
+    description: "Долг",
     note: null,
     confidence: 0.9,
     ambiguities: [],

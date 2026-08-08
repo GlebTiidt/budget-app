@@ -18,10 +18,10 @@ Personal budget app with an owner-only Telegram parser preview and a planned con
 
 ## Target Flow
 
-1. User sends one or more expenses, incomes, transfers, or a balance observation to Telegram.
+1. User sends one or more expenses, incomes, transfers, debt actions, or a balance observation to Telegram.
 2. Telegram adapter parses the message into a budget command.
-3. OpenAI turns informal text into ordered structured drafts and separates balance observations from transactions.
-4. The bot shows every numbered draft in one message, asks for missing fields, and accepts confirmation, correction, or cancellation as a normal text reply.
+3. OpenAI turns informal text into ordered structured drafts and separates debt operations and balance observations from ordinary transactions.
+4. The bot numbers transaction and debt drafts, shows an observed balance once in the summary, keeps debt grouped by counterparty and original currency, and accepts confirmation, correction, or cancellation as a normal text reply.
 5. Budget domain validates, converts, and normalizes the transaction.
 6. Notion integration writes the transaction to the selected database.
 7. Bot replies with the saved result; the owner can open animated monthly Chart.js reports from Telegram.

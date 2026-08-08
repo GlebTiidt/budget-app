@@ -44,6 +44,43 @@ test("summarizes income, expense, and observed balances in the user currency", a
           occurredOn: "2026-08-06"
         }
       ],
+      debtOperations: [
+        {
+          amount: 100,
+          currency: "USD",
+          action: "borrow",
+          occurredOn: "2026-08-06",
+          counterparty: "Петя"
+        },
+        {
+          amount: 20,
+          currency: "USD",
+          action: "repay_borrowed",
+          occurredOn: "2026-08-06",
+          counterparty: "петя"
+        },
+        {
+          amount: 70,
+          currency: "USD",
+          action: "lend",
+          occurredOn: "2026-08-06",
+          counterparty: "Аня"
+        },
+        {
+          amount: 10,
+          currency: "USD",
+          action: "collect",
+          occurredOn: "2026-08-06",
+          counterparty: "Аня"
+        },
+        {
+          amount: 150,
+          currency: "EUR",
+          action: "borrow",
+          occurredOn: "2026-08-06",
+          counterparty: "Ольга"
+        }
+      ],
       balanceObservations: [
         {
           amount: 7_250_000,
@@ -70,11 +107,25 @@ test("summarizes income, expense, and observed balances in the user currency", a
   assert.deepEqual(summary.observedBalances, [
     { account: "Вьетнамский счёт", amount: 725_000 }
   ]);
+  assert.deepEqual(summary.debt, {
+    owedByUser: [
+      { counterparty: "Ольга", currency: "EUR", amount: 150 },
+      { counterparty: "Петя", currency: "USD", amount: 80 }
+    ],
+    owedToUser: [{ counterparty: "Аня", currency: "USD", amount: 60 }]
+  });
   assert.equal(summary.incompleteOperationCount, 0);
   assert.equal(
     conversionCalls.some((call) => call.amount === 500),
     false,
     "personal transfers must not affect income or expense"
+  );
+  assert.equal(
+    conversionCalls.some((call) =>
+      [100, 20, 70, 10, 150].includes(call.amount)
+    ),
+    false,
+    "debt must stay in its original currency"
   );
   assert.ok(conversionCalls.every((call) => call.to === "EUR"));
 });
@@ -90,6 +141,7 @@ test("counts incomplete operations without inventing their totals", async () => 
           occurredOn: "2026-08-06"
         }
       ],
+      debtOperations: [],
       balanceObservations: []
     },
     "USD",

@@ -34,7 +34,7 @@ This file captures future product ideas and UX details. It is not the delivery-s
 
 ## Show Telegram Help Only When It Is Useful
 
-- [x] Explain confirmation, corrections, cancellation, `тоже`, and balance labels such as `Б1` once during `/start` onboarding instead of repeating the full instruction block under every preview.
+- [x] Explain confirmation, corrections, cancellation, and `тоже` once during `/start` onboarding instead of repeating the full instruction block under every preview; show an observed balance only once in the summary without a `Б1` row.
 - [x] Keep the same detailed guidance available through `/help` whenever the user wants to see it again.
 - [x] In routine previews, show only a short conversational next step such as `Всё совпало? Напишите «всё верно».` without the repeated list of correction examples.
 - [x] After an unrecognized correction, show only the hint relevant to that error rather than replaying the complete onboarding instructions.

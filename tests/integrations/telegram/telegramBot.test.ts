@@ -8,6 +8,7 @@ import type {
 import type { CurrencyConverter } from "../../../src/integrations/currency/frankfurterCurrencyConverter.js";
 import type {
   ParsedBudgetMessageDraft,
+  ParsedDebtOperationDraft,
   ParsedTransactionDraft,
   TransactionTextParser
 } from "../../../src/integrations/openai/openAiTransactionParser.js";
@@ -23,7 +24,7 @@ test("allows only configured Telegram users", () => {
   assert.equal(isTelegramUserAllowed(undefined, ["100001"]), false);
 });
 
-test("formats all parsed items in one safe preview", () => {
+test("formats income before expenses while keeping each group stable", () => {
   const preview = formatBudgetMessagePreview({
     transactions: [
       {
@@ -39,8 +40,22 @@ test("formats all parsed items in one safe preview", () => {
         confidence: 0.99,
         ambiguities: []
       },
+      {
+        ...createDraft("transfer"),
+        amount: 200,
+        account: "Карта",
+        destinationAccount: "Сбережения",
+        category: null,
+        description: "В сбережения"
+      },
+      {
+        ...createDraft("expense"),
+        amount: 70,
+        description: "Второй расход"
+      },
       createDraft("income")
     ],
+    debtOperations: [createDebtOperation("borrow", "Марина")],
     balanceObservations: [
       {
         amount: 20_000,
@@ -56,14 +71,16 @@ test("formats all parsed items in one safe preview", () => {
 
   assert.match(preview, /<b>Вот что я понял из сообщения:<\/b>/);
   assert.match(preview, /<b>Операции:<\/b>/);
-  assert.match(preview, /1\. Расход — <b>120[  ]000 VND<\/b>/);
-  assert.match(preview, /2\. Доход — <b>50 USD<\/b>/);
+  assert.match(preview, /1\. Доход — <b>50 USD<\/b>/);
+  assert.match(preview, /2\. Расход — <b>120[  ]000 VND<\/b>/);
+  assert.match(preview, /3\. Расход — <b>70 USD<\/b>/);
+  assert.match(preview, /4\. Перевод — <b>200 USD<\/b>/);
+  assert.match(preview, /Д1\. Взял в долг — Марина/);
+  assert.ok(preview.indexOf("2. Расход") < preview.indexOf("3. Расход"));
+  assert.ok(preview.indexOf("3. Расход") < preview.indexOf("4. Перевод"));
+  assert.ok(preview.indexOf("4. Перевод") < preview.indexOf("Д1. Взял в долг"));
   assert.match(preview, /<b>Кофешоп<\/b>/);
-  assert.match(
-    preview,
-    /Б1\. На счёте «Вьетнамский счёт» осталось <b>20[  ]000 VND<\/b> на 04\.08\.2026\./
-  );
-  assert.match(preview, /Держу его отдельно, чтобы не считать доходом или расходом/);
+  assert.doesNotMatch(preview, /Б1\.|Ещё вижу остаток|Держу его отдельно/);
   assert.match(
     preview,
     /<b>Всё совпало\?<\/b> Напишите «всё верно» или просто скажите, что поправить\./
@@ -90,8 +107,10 @@ test("asks numbered follow-up questions for every missing field", () => {
           "Не указана валюта",
           "Указан перевод через криптокошелёк, но счёт не определён"
         ]
-      }
+      },
+      createDraft("income")
     ],
+    debtOperations: [],
     balanceObservations: [
       {
         amount: 20_000,
@@ -105,13 +124,14 @@ test("asks numbered follow-up questions for every missing field", () => {
     ambiguities: ["Для транзакции 1 счёт не определён однозначно"]
   });
 
-  assert.match(preview, /1\. Расход — <b>50, валюта не указана<\/b>/);
+  assert.match(preview, /1\. Доход — <b>50 USD<\/b>/);
+  assert.match(preview, /2\. Расход — <b>50, валюта не указана<\/b>/);
   assert.match(preview, /низкая уверенность/);
   assert.match(
     preview,
-    /Транзакция 1 «Покупка» — укажите валюту, категорию и счёт\./
+    /Транзакция 2 «Покупка» — укажите валюту, категорию и счёт\./
   );
-  assert.match(preview, /Наблюдение баланса Б1 — укажите счёт\./);
+  assert.doesNotMatch(preview, /Наблюдение баланса|Б1/);
   assert.doesNotMatch(preview, /криптокошелёк/);
   assert.doesNotMatch(preview, /не определён однозначно/);
 });
@@ -135,6 +155,7 @@ test("formats a personal transfer as a complete account route", () => {
         description: "Перевод без получателя"
       }
     ],
+    debtOperations: [],
     balanceObservations: [],
     ambiguities: []
   });
@@ -149,6 +170,68 @@ test("formats a personal transfer as a complete account route", () => {
   );
 });
 
+test("shows debt operations separately and reports them after total balance", () => {
+  const preview = formatBudgetMessagePreview(
+    {
+      transactions: [],
+      debtOperations: [
+        createDebtOperation("borrow", "Петя"),
+        createDebtOperation("repay_borrowed", "Петя"),
+        createDebtOperation("lend", "Аня"),
+        createDebtOperation("collect", "Аня")
+      ],
+      balanceObservations: [
+        {
+          amount: 200,
+          currency: "EUR",
+          occurredOn: "2026-08-04",
+          account: "Карта",
+          confidence: 0.9,
+          ambiguities: []
+        }
+      ],
+      ambiguities: []
+    },
+    {
+      baseCurrency: "EUR",
+      summary: {
+        baseCurrency: "EUR",
+        income: 0,
+        expense: 0,
+        incompleteOperationCount: 0,
+        observedBalances: [{ account: "Карта", amount: 200 }],
+        debt: {
+          owedByUser: [
+            { counterparty: "Петя", currency: "USD", amount: 350 },
+            { counterparty: "Аня", currency: "EUR", amount: 100 }
+          ],
+          owedToUser: [
+            { counterparty: "Олег", currency: "VND", amount: 2_000_000 }
+          ]
+        }
+      }
+    }
+  );
+
+  assert.match(preview, /Д1\. Взял в долг — Петя/);
+  assert.match(preview, /Д2\. Вернул долг — Петя/);
+  assert.match(preview, /Д3\. Дал в долг — Аня/);
+  assert.match(preview, /Д4\. Мне вернули долг — Аня/);
+  assert.doesNotMatch(preview, /Б1\./);
+  assert.ok(preview.indexOf("Общий остаток") < preview.indexOf("Общий долг"));
+  assert.match(
+    preview,
+    /<b>Общий долг:<\/b> <b>100 EUR · 350 USD<\/b>/
+  );
+  assert.match(preview, /Петя — <b>350 USD<\/b>/);
+  assert.match(preview, /Аня — <b>100 EUR<\/b>/);
+  assert.match(
+    preview,
+    /<b>Всего должны мне:<\/b> <b>2[  ]000[  ]000 VND<\/b>/
+  );
+  assert.match(preview, /Олег — <b>2[  ]000[  ]000 VND<\/b>/);
+});
+
 test("keeps complete clarification text when the preview fits Telegram", () => {
   const clarification =
     "Нужно уточнить сумму в донгах после обмена, если она отличалась от эквивалента исходных 177 USD, и подтвердить, что вся сумма пришла на Вьетнамский счёт.";
@@ -160,6 +243,7 @@ test("keeps complete clarification text when the preview fits Telegram", () => {
         note: clarification
       }
     ],
+    debtOperations: [],
     balanceObservations: [],
     ambiguities: [clarification]
   });
@@ -179,6 +263,7 @@ test("escapes dynamic text before sending Telegram HTML", () => {
         note: "Чек > ожиданий"
       }
     ],
+    debtOperations: [],
     balanceObservations: [],
     ambiguities: []
   });
@@ -199,6 +284,7 @@ test("keeps a maximum-size batch inside one Telegram message", () => {
       note: longText,
       ambiguities: [longText]
     })),
+    debtOperations: [],
     balanceObservations: [],
     ambiguities: [longText]
   });
@@ -213,6 +299,7 @@ test("keeps a maximum-size batch inside one Telegram message", () => {
 test("Telegram revises a combined preview from a normal text reply", async () => {
   const initialParsed: ParsedBudgetMessageDraft = {
     transactions: [createDraft("income"), createDraft("expense")],
+    debtOperations: [],
     balanceObservations: [
       {
         amount: 20_000,
@@ -239,6 +326,7 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
             account: "Карта"
           }
         ],
+        debtOperations: [],
         balanceObservations: [
           {
             ...initialParsed.balanceObservations[0]!,
@@ -326,7 +414,7 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
   );
   assert.match(String(sentMessages[0]?.text), /1\. Доход/);
   assert.match(String(sentMessages[0]?.text), /2\. Расход/);
-  assert.match(String(sentMessages[0]?.text), /Б1\./);
+  assert.doesNotMatch(String(sentMessages[0]?.text), /Б1\./);
   assert.match(
     String(sentMessages[0]?.text),
     /<b>Итог этого сообщения в EUR:<\/b>/
@@ -335,7 +423,11 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
   assert.match(String(sentMessages[0]?.text), /<b>Расход:<\/b> <b>50 EUR<\/b>/);
   assert.match(
     String(sentMessages[0]?.text),
-    /<b>Остаток:<\/b> <b>20[  ]000 EUR<\/b>/
+    /<b>Общий остаток:<\/b> <b>20[  ]000 EUR<\/b>/
+  );
+  assert.doesNotMatch(
+    String(sentMessages[0]?.text),
+    /Общий остаток на «Вьетнамский счёт»/
   );
 
   const replyMarkup = sentMessages[0]?.reply_markup as {
@@ -382,7 +474,7 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
   assert.equal(revisionCalls[0]!.instruction, "Для всех счёт Карта; отмени 2");
   assert.match(String(sentMessages[1]?.text), /1\. Доход.*Карта/);
   assert.doesNotMatch(String(sentMessages[1]?.text), /2\. Расход/);
-  assert.match(String(sentMessages[1]?.text), /Б1\..*Карта/);
+  assert.doesNotMatch(String(sentMessages[1]?.text), /Б1\./);
 
   await bot.handleUpdate({
     update_id: 3,
@@ -472,6 +564,7 @@ test("Telegram requires onboarding currency and keeps it in user settings", asyn
             account: "Crypto"
           }
         ],
+        debtOperations: [],
         balanceObservations: [],
         ambiguities: []
       };
@@ -556,7 +649,11 @@ test("Telegram requires onboarding currency and keeps it in user settings", asyn
   });
 
   assert.match(String(sentMessages[0]?.text), /выберем основную валюту/i);
-  assert.match(JSON.stringify(sentMessages[0]?.reply_markup), /settings:currency:EUR/);
+  assert.match(JSON.stringify(sentMessages[0]?.reply_markup), /force_reply/);
+  assert.doesNotMatch(
+    JSON.stringify(sentMessages[0]?.reply_markup),
+    /settings:currency:/
+  );
 
   await bot.handleUpdate({
     update_id: 11,
@@ -574,16 +671,50 @@ test("Telegram requires onboarding currency and keeps it in user settings", asyn
 
   await bot.handleUpdate({
     update_id: 12,
+    message: {
+      message_id: 22,
+      date: 1_775_463_002,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: { id: 100001, is_bot: false, first_name: "Owner" },
+      text: "дол",
+      reply_to_message: {
+        message_id: 1,
+        date: 1_775_463_000,
+        chat: { id: 100001, type: "private", first_name: "Owner" },
+        from: {
+          id: 123456,
+          is_bot: true,
+          first_name: "Budget Test Bot",
+          username: "budget_test_bot"
+        },
+        text: String(sentMessages[0]?.text),
+        reply_to_message: undefined
+      }
+    }
+  });
+
+  assert.match(String(sentMessages[2]?.text), /Нашёл несколько валют/);
+  assert.match(
+    JSON.stringify(sentMessages[2]?.reply_markup),
+    /settings:currency:USD/
+  );
+  assert.match(
+    JSON.stringify(sentMessages[2]?.reply_markup),
+    /settings:currency:AUD/
+  );
+
+  await bot.handleUpdate({
+    update_id: 13,
     callback_query: {
       id: "callback-1",
       from: { id: 100001, is_bot: false, first_name: "Owner" },
       chat_instance: "chat-instance",
       data: "settings:currency:USD",
       message: {
-        message_id: 1,
+        message_id: 3,
         date: 1_775_463_000,
         chat: { id: 100001, type: "private", first_name: "Owner" },
-        text: String(sentMessages[0]?.text)
+        text: String(sentMessages[2]?.text)
       }
     }
   });
@@ -596,10 +727,10 @@ test("Telegram requires onboarding currency and keeps it in user settings", asyn
   assert.match(String(editedMessages[0]?.text), /основная валюта USD/);
 
   await bot.handleUpdate({
-    update_id: 13,
+    update_id: 14,
     message: {
-      message_id: 22,
-      date: 1_775_463_002,
+      message_id: 23,
+      date: 1_775_463_003,
       chat: { id: 100001, type: "private", first_name: "Owner" },
       from: { id: 100001, is_bot: false, first_name: "Owner" },
       text: "Получил 50 USD"
@@ -608,28 +739,14 @@ test("Telegram requires onboarding currency and keeps it in user settings", asyn
 
   assert.equal(parseCalls, 1);
   assert.match(
-    String(sentMessages[2]?.text),
+    String(sentMessages[3]?.text),
     /<b>Итог этого сообщения в USD:<\/b>/
   );
-  assert.match(String(sentMessages[2]?.text), /<b>Доход:<\/b> <b>50 USD<\/b>/);
+  assert.match(String(sentMessages[3]?.text), /<b>Доход:<\/b> <b>50 USD<\/b>/);
   assert.match(
-    String(sentMessages[2]?.text),
-    /<b>Остаток:<\/b> в этом сообщении не указан\./
+    String(sentMessages[3]?.text),
+    /<b>Общий остаток:<\/b> в этом сообщении не указан\./
   );
-
-  await bot.handleUpdate({
-    update_id: 14,
-    message: {
-      message_id: 23,
-      date: 1_775_463_003,
-      chat: { id: 100001, type: "private", first_name: "Owner" },
-      from: { id: 100001, is_bot: false, first_name: "Owner" },
-      text: "/start",
-      entities: [{ type: "bot_command", offset: 0, length: 6 }]
-    }
-  });
-  assert.match(String(sentMessages[3]?.text), /С возвращением/);
-  assert.doesNotMatch(String(sentMessages[3]?.text), /Слово «тоже»/);
 
   await bot.handleUpdate({
     update_id: 15,
@@ -638,12 +755,12 @@ test("Telegram requires onboarding currency and keeps it in user settings", asyn
       date: 1_775_463_004,
       chat: { id: 100001, type: "private", first_name: "Owner" },
       from: { id: 100001, is_bot: false, first_name: "Owner" },
-      text: "/help",
-      entities: [{ type: "bot_command", offset: 0, length: 5 }]
+      text: "/start",
+      entities: [{ type: "bot_command", offset: 0, length: 6 }]
     }
   });
-  assert.match(String(sentMessages[4]?.text), /<b>Как со мной работать<\/b>/);
-  assert.match(String(sentMessages[4]?.text), /Слово «тоже»/);
+  assert.match(String(sentMessages[4]?.text), /С возвращением/);
+  assert.doesNotMatch(String(sentMessages[4]?.text), /Слово «тоже»/);
 
   await bot.handleUpdate({
     update_id: 16,
@@ -652,13 +769,75 @@ test("Telegram requires onboarding currency and keeps it in user settings", asyn
       date: 1_775_463_005,
       chat: { id: 100001, type: "private", first_name: "Owner" },
       from: { id: 100001, is_bot: false, first_name: "Owner" },
+      text: "/help",
+      entities: [{ type: "bot_command", offset: 0, length: 5 }]
+    }
+  });
+  assert.match(String(sentMessages[5]?.text), /<b>Как со мной работать<\/b>/);
+  assert.match(String(sentMessages[5]?.text), /Слово «тоже»/);
+
+  await bot.handleUpdate({
+    update_id: 17,
+    message: {
+      message_id: 26,
+      date: 1_775_463_006,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: { id: 100001, is_bot: false, first_name: "Owner" },
+      text: "/settings",
+      entities: [{ type: "bot_command", offset: 0, length: 9 }]
+    }
+  });
+  assert.match(String(sentMessages[6]?.text), /Основная валюта: <b>USD<\/b>/);
+  assert.match(JSON.stringify(sentMessages[6]?.reply_markup), /force_reply/);
+
+  await bot.handleUpdate({
+    update_id: 18,
+    message: {
+      message_id: 27,
+      date: 1_775_463_007,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: { id: 100001, is_bot: false, first_name: "Owner" },
+      text: "евро",
+      reply_to_message: {
+        message_id: 7,
+        date: 1_775_463_006,
+        chat: { id: 100001, type: "private", first_name: "Owner" },
+        from: {
+          id: 123456,
+          is_bot: true,
+          first_name: "Budget Test Bot",
+          username: "budget_test_bot"
+        },
+        text: String(sentMessages[6]?.text),
+        reply_to_message: undefined
+      }
+    }
+  });
+  assert.equal(parseCalls, 1, "currency search must not call OpenAI");
+  assert.deepEqual(savedSettings, {
+    telegramUserId: "100001",
+    baseCurrency: "EUR",
+    onboardingHelpShown: true
+  });
+  assert.match(
+    String(sentMessages[7]?.text),
+    /<b>Готово\. Основная валюта: EUR\.<\/b>/
+  );
+
+  await bot.handleUpdate({
+    update_id: 19,
+    message: {
+      message_id: 28,
+      date: 1_775_463_008,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: { id: 100001, is_bot: false, first_name: "Owner" },
       text: "/reports",
       entities: [{ type: "bot_command", offset: 0, length: 8 }]
     }
   });
-  assert.match(String(sentMessages[5]?.text), /выберите месяц и вид диаграммы/i);
+  assert.match(String(sentMessages[8]?.text), /выберите месяц и вид диаграммы/i);
   assert.match(
-    JSON.stringify(sentMessages[5]?.reply_markup),
+    JSON.stringify(sentMessages[8]?.reply_markup),
     /https:\/\/budget\.example\/reports\.html/
   );
 });
@@ -675,6 +854,24 @@ function createDraft(
     account: null,
     destinationAccount: null,
     description: "Тест",
+    note: null,
+    confidence: 0.9,
+    ambiguities: []
+  };
+}
+
+function createDebtOperation(
+  action: ParsedDebtOperationDraft["action"],
+  counterparty: string | null
+): ParsedDebtOperationDraft {
+  return {
+    amount: 50,
+    currency: "EUR",
+    action,
+    occurredOn: "2026-08-04",
+    counterparty,
+    account: "Карта",
+    description: "Долг",
     note: null,
     confidence: 0.9,
     ambiguities: []

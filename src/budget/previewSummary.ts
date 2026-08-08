@@ -1,4 +1,5 @@
 import type { SupportedCurrency } from "./userSettings.js";
+import type { DebtAction } from "./types.js";
 
 type SummaryTransaction = {
   amount: number | null;
@@ -14,8 +15,17 @@ type SummaryBalanceObservation = {
   account: string | null;
 };
 
+type SummaryDebtOperation = {
+  amount: number | null;
+  currency: string | null;
+  action: DebtAction;
+  occurredOn: string;
+  counterparty: string | null;
+};
+
 export type BudgetMessageForSummary = {
   transactions: SummaryTransaction[];
+  debtOperations: SummaryDebtOperation[];
   balanceObservations: SummaryBalanceObservation[];
 };
 
@@ -35,6 +45,16 @@ export type BudgetPreviewSummary = {
     account: string | null;
     amount: number;
   }>;
+  debt: {
+    owedByUser: DebtPosition[];
+    owedToUser: DebtPosition[];
+  };
+};
+
+export type DebtPosition = {
+  counterparty: string | null;
+  currency: string;
+  amount: number;
 };
 
 export async function calculateBudgetPreviewSummary(
@@ -64,6 +84,12 @@ export async function calculateBudgetPreviewSummary(
     }))
   );
 
+  const completeDebtOperations = message.debtOperations.filter(
+    (
+      operation
+    ): operation is SummaryDebtOperation & { amount: number; currency: string } =>
+      operation.amount !== null && operation.currency !== null
+  );
   const observedBalances = await Promise.all(
     message.balanceObservations.map(async (observation) => ({
       account: observation.account,
@@ -89,9 +115,65 @@ export async function calculateBudgetPreviewSummary(
         .reduce((sum, transaction) => sum + transaction.amount, 0)
     ),
     incompleteOperationCount:
-      includedTransactions.length - completeTransactions.length,
-    observedBalances
+      includedTransactions.length -
+      completeTransactions.length +
+      message.debtOperations.length -
+      completeDebtOperations.length,
+    observedBalances,
+    debt: {
+      owedByUser: buildDebtPositions(
+        completeDebtOperations,
+        new Set<DebtAction>(["borrow", "repay_borrowed"])
+      ),
+      owedToUser: buildDebtPositions(
+        completeDebtOperations,
+        new Set<DebtAction>(["lend", "collect"])
+      )
+    }
   };
+}
+
+function buildDebtPositions(
+  operations: Array<
+    SummaryDebtOperation & { amount: number; currency: string }
+  >,
+  actions: ReadonlySet<DebtAction>
+): DebtPosition[] {
+  const positions = new Map<
+    string,
+    { counterparty: string | null; currency: string; amount: number }
+  >();
+
+  for (const operation of operations) {
+    if (!actions.has(operation.action)) {
+      continue;
+    }
+    const normalizedCounterparty = operation.counterparty
+      ?.trim()
+      .toLocaleLowerCase("ru-RU");
+    const key = `${operation.currency}\u0000${normalizedCounterparty ?? ""}`;
+    const current = positions.get(key) ?? {
+      counterparty: operation.counterparty,
+      currency: operation.currency,
+      amount: 0
+    };
+    const reducesDebt =
+      operation.action === "repay_borrowed" || operation.action === "collect";
+    current.amount += reducesDebt ? -operation.amount : operation.amount;
+    positions.set(key, current);
+  }
+
+  return [...positions.values()]
+    .map((position) => ({ ...position, amount: roundMoney(position.amount) }))
+    .filter((position) => position.amount !== 0)
+    .sort(
+      (left, right) =>
+        left.currency.localeCompare(right.currency) ||
+        (left.counterparty ?? "").localeCompare(
+          right.counterparty ?? "",
+          "ru-RU"
+        )
+    );
 }
 
 function roundMoney(value: number): number {

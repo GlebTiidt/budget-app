@@ -41,8 +41,15 @@ test("serializes parser context as a valid TOON input block", () => {
 test("serializes revision lines without losing their order", () => {
   const prompt = serializeRevisionPromptToToon({
     ...context,
-    currentPreviewLines: ["1. Доход — 177 USD · Crypto", "Б1. 20 000 VND"],
-    userReplyLines: ["1: потом перевод на Вьетнамский счёт", "Б: тоже"]
+    currentPreviewLines: [
+      "1. Доход — 177 USD · Crypto",
+      "Д1. Взял в долг — Петя · 350 USD",
+      "Общий остаток: 20 000 VND"
+    ],
+    userReplyLines: [
+      "1: потом перевод на Вьетнамский счёт",
+      "Д1: счёт Карта"
+    ]
   });
   const decoded = decode(unwrapToonBlock(prompt)) as {
     currentPreviewLines: string[];
@@ -51,11 +58,12 @@ test("serializes revision lines without losing their order", () => {
 
   assert.deepEqual(decoded.currentPreviewLines, [
     "1. Доход — 177 USD · Crypto",
-    "Б1. 20 000 VND"
+    "Д1. Взял в долг — Петя · 350 USD",
+    "Общий остаток: 20 000 VND"
   ]);
   assert.deepEqual(decoded.userReplyLines, [
     "1: потом перевод на Вьетнамский счёт",
-    "Б: тоже"
+    "Д1: счёт Карта"
   ]);
 });
 

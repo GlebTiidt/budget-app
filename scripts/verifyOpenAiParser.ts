@@ -3,6 +3,7 @@ import { loadConfig } from "../src/config/loadConfig.js";
 import {
   createOpenAiTransactionParser,
   type ParsedBudgetMessageDraft,
+  type ParsedDebtOperationDraft,
   type ParsedTransactionDraft
 } from "../src/integrations/openai/openAiTransactionParser.js";
 import type {
@@ -29,12 +30,20 @@ type ExpectedTransaction = Partial<
   >
 >;
 
+type ExpectedDebtOperation = Partial<
+  Pick<
+    ParsedDebtOperationDraft,
+    "amount" | "currency" | "action" | "counterparty" | "account"
+  >
+>;
+
 type VerificationCase = {
   name: string;
   input: string;
   expectedDirections: DirectionCounts;
   expectedBalanceObservations: number;
   expectedTransactions?: ExpectedTransaction[];
+  expectedDebtOperations?: ExpectedDebtOperation[];
 };
 
 const fixedNow = new Date("2026-08-04T07:45:00.000Z");
@@ -172,6 +181,43 @@ const verificationCases: VerificationCase[] = [
         destinationAccount: "Сбережения"
       }
     ]
+  },
+  {
+    name: "borrowing, repayment, lending, and collection stay separate",
+    input:
+      "Сегодня взял у Пети в долг 350 USD на карту, вернул ему 50 USD с карты, дал Ане 2 000 000 VND в долг наличными, а Олег вернул мне 100 EUR долга на карту.",
+    expectedDirections: { income: 0, expense: 0, transfer: 0 },
+    expectedBalanceObservations: 0,
+    expectedDebtOperations: [
+      {
+        amount: 350,
+        currency: "USD",
+        action: "borrow",
+        counterparty: "Петя",
+        account: "Карта"
+      },
+      {
+        amount: 50,
+        currency: "USD",
+        action: "repay_borrowed",
+        counterparty: "Петя",
+        account: "Карта"
+      },
+      {
+        amount: 2_000_000,
+        currency: "VND",
+        action: "lend",
+        counterparty: "Аня",
+        account: "Наличные"
+      },
+      {
+        amount: 100,
+        currency: "EUR",
+        action: "collect",
+        counterparty: "Олег",
+        account: "Карта"
+      }
+    ]
   }
 ];
 
@@ -208,7 +254,7 @@ for (const [index, verificationCase] of verificationCases.entries()) {
   console.log(
     `${index + 1}. ${status} — ${verificationCase.name} — ` +
       `income=${counts.income}, expense=${counts.expense}, transfer=${counts.transfer}, ` +
-      `balances=${parsed.balanceObservations.length}`
+      `debts=${parsed.debtOperations.length}, balances=${parsed.balanceObservations.length}`
   );
 
   for (const draft of parsed.transactions) {
@@ -219,6 +265,13 @@ for (const [index, verificationCase] of verificationCases.entries()) {
     console.log(
       `   ${draft.direction}: ${draft.amount ?? "?"} ${draft.currency ?? "?"} · ` +
         `${draft.category ?? "без категории"} · ${draft.description}${accountRoute}`
+    );
+  }
+
+  for (const debt of parsed.debtOperations) {
+    console.log(
+      `   debt:${debt.action}: ${debt.amount ?? "?"} ${debt.currency ?? "?"} · ` +
+        `${debt.counterparty ?? "без контрагента"} · ${debt.account ?? "без счёта"}`
     );
   }
 
@@ -243,18 +296,13 @@ if (revisionSource) {
       "2: Вьетнамский счёт",
       "3: тоже",
       "тоже",
-      "тоже",
       "тоже"
     ].join("\n"),
     fixedNow
   );
   revisionPassed =
     revised.transactions.length === 5 &&
-    revised.transactions.every((item) => item.account === "Вьетнамский счёт") &&
-    revised.balanceObservations.length === 1 &&
-    revised.balanceObservations.every(
-      (item) => item.account === "Вьетнамский счёт"
-    );
+    revised.transactions.every((item) => item.account === "Вьетнамский счёт");
   console.log(
     `Live reply revision: ${revisionPassed ? "PASS" : "FAIL"} — ` +
       `transactions=${revised.transactions.length}, ` +
@@ -289,11 +337,7 @@ if (revisionSource) {
     routedIncome?.account === "Crypto" &&
     Boolean(routedTransfer) &&
     routedExpenses.length === 4 &&
-    routedExpenses.every((item) => item.account === "Вьетнамский счёт") &&
-    routed.balanceObservations.length === 1 &&
-    routed.balanceObservations.every(
-      (item) => item.account === "Вьетнамский счёт"
-    );
+    routedExpenses.every((item) => item.account === "Вьетнамский счёт");
   console.log(
     `Live account-transfer revision: ${accountTransferRevisionPassed ? "PASS" : "FAIL"} — ` +
       `transactions=${routed.transactions.length}, ` +
@@ -341,6 +385,22 @@ function verifyResult(
     }
   }
 
+  for (const expected of verificationCase.expectedDebtOperations ?? []) {
+    if (!parsed.debtOperations.some((actual) => debtOperationMatches(actual, expected))) {
+      errors.push(`missing expected debt operation ${JSON.stringify(expected)}`);
+    }
+  }
+
+  if (
+    parsed.debtOperations.length !==
+    (verificationCase.expectedDebtOperations?.length ?? 0)
+  ) {
+    errors.push(
+      `expected debt operations=${verificationCase.expectedDebtOperations?.length ?? 0}, ` +
+        `received ${parsed.debtOperations.length}`
+    );
+  }
+
   return errors;
 }
 
@@ -360,6 +420,15 @@ function transactionMatches(
 ): boolean {
   return Object.entries(expected).every(([key, value]) => {
     return actual[key as keyof ExpectedTransaction] === value;
+  });
+}
+
+function debtOperationMatches(
+  actual: ParsedDebtOperationDraft,
+  expected: ExpectedDebtOperation
+): boolean {
+  return Object.entries(expected).every(([key, value]) => {
+    return actual[key as keyof ExpectedDebtOperation] === value;
   });
 }
 

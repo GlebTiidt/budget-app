@@ -23,6 +23,8 @@ This is the living rules file for the budget app. We update it when decisions be
 
 - Every transaction must have direction and date. Amount and currency may be missing only in an incomplete draft and are required before saving.
 - Direction is either `expense`, `income`, or `transfer`.
+- Borrowing and lending are separate debt operations, never ordinary income, expense, or personal transfer. The supported actions are `borrow`, `repay_borrowed`, `lend`, and `collect`.
+- Every debt operation keeps its original amount and currency plus the person or organization involved. Debt positions are tracked by counterparty and original currency; never convert them into the reporting currency merely to combine them.
 - Categories should be normalized before saving to Notion.
 - The current expense category list is `Кот`, `Еда`, `Транспорт`, `Жильё`, `Подписки`, `Здоровье`, `Развлечения`, `Покупки`, `Другое`, `Кофешоп`, `Еда вне дома`, and `Спорт`.
 - The income categories are `Фриланс` and `Работа`.
@@ -40,7 +42,7 @@ This is the living rules file for the budget app. We update it when decisions be
 - The personal MVP tracks one total balance in the user's base currency rather than separate calculated per-account balances.
 - Transfers between supported personal accounts are first-class transactions. A transfer stores both its source account and destination account and requires confirmation before saving.
 - Every confirmed transaction must eventually store the base currency used and the running balance immediately after that operation. The owner's existing fixed-EUR Notion schema remains unchanged until its generic base-currency migration is implemented and verified.
-- For the total balance, income adds the amount converted into the user's base currency, expense subtracts it, and transfers between personal accounts do not change it.
+- For the total balance, income adds the amount converted into the user's base currency, expense subtracts it, and transfers between personal accounts do not change it. Borrowing and collected repayments add available money; repayment of the user's debt and lending subtract it, while all four remain excluded from income and expense totals.
 - For transaction drafts, `account` is the payment account for an expense, the receiving account for income, and the source account for a transfer; `destinationAccount` is required only for a transfer.
 - Backdated inserts, corrections, and deletions require recalculation of every later running balance in deterministic date/order sequence.
 - Currency conversion uses Frankfurter v2 without an API key and targets the user's selected base currency. A same-currency conversion uses rate `1` without a network request.
@@ -50,17 +52,18 @@ This is the living rules file for the budget app. We update it when decisions be
 - Keep reusable OpenAI instructions before changing TOON input, state each rule once, and rerun the representative live parser suite after changing a prompt or reasoning setting.
 - Use `reasoning.effort: none` for the GPT-5.6 budget parser while the full live suite remains green; raise it only for a measured correctness regression.
 - Use `text.verbosity: low`, an `8,000`-token response ceiling, and bounded Structured Output strings for the GPT-5.6 budget parser. Change these limits only after the maximum-size structured response and live parser suite still pass.
-- Keep the parser cache key `budget-parse-toon-v1` and revision cache key `budget-revise-toon-v1` separate, with an explicit breakpoint after reusable developer instructions and before changing TOON data. Bump the key version when the reusable prompt contract changes materially.
-- The current verified token baseline is 13 live requests: all 11 parser cases and both reply revisions passed with both `low` and `none`; `none` reduced total usage from `17,312` to `15,768` tokens (`-8.9%`). Treat this as a regression baseline, not a universal saving; full measurements and research decisions live in [`docs/token-optimization.md`](token-optimization.md).
+- Keep the parser cache key `budget-parse-toon-v2` and revision cache key `budget-revise-toon-v2` separate, with an explicit breakpoint after reusable developer instructions and before changing TOON data. Bump the key version when the reusable prompt contract changes materially.
+- The current debt-schema `v2` verification is 14 live requests: all 12 parser cases and both reply revisions passed with `reasoning.effort: none`, using 20,924 total tokens with 12,232 cached input tokens. The earlier `v1` comparison showed `none` reduced usage by `8.9%` versus `low`; treat both as regression baselines, not universal savings. Full measurements live in [`docs/token-optimization.md`](token-optimization.md).
 - Log OpenAI input, cache-read, cache-write, output, reasoning, and total token counts without logging prompt or response content.
 - Never add filler solely to cross the prompt-cache minimum. A shorter uncached prompt is preferred unless measured request volume and cache pricing prove otherwise.
 - One Telegram text message may produce multiple transaction drafts. Resolve references and later clarifications within that message, but do not send unrelated chat history to the language model.
 - A preview correction may send only the normalized current preview and the user's direct reply to the language model; never include unrelated messages or raw history.
 - The preview, direct reply, controlled catalogs, timestamp, and timezone are serialized into one TOON input document for correction requests.
-- In preview replies, a standalone `тоже` repeats the most recent field assignment for the next unresolved item in preview order, continuing from transactions to balance observations.
+- In preview replies, a standalone `тоже` repeats the most recent field assignment for the next unresolved visible item in preview order.
 - If money passes through an unsupported wallet before reaching a supported account, use the supported final destination as the account and keep the intermediate route only as additional note context.
 - Keep every extracted transaction as an independent draft with its own direction, amount, currency, date, category, account, confidence, and ambiguities.
 - A stated current or remaining balance is a balance observation, not a transaction, and must never be silently converted into income or expense.
+- Show an explicit balance observation once, as `Общий остаток` in the converted summary. Do not repeat it as a separate `Б1` preview row and do not repeat its account in the summary label.
 - Timezone defaults to `Asia/Ho_Chi_Minh` unless explicitly changed.
 - The MVP uses the transaction date to request the historical rate and stores the applied rate; it does not expose a separate rate-date property in Notion.
 - The MVP does not store a `Source` property because Telegram is the only input source.
@@ -70,6 +73,7 @@ This is the living rules file for the budget app. We update it when decisions be
 - The current currency list is `USD`, `RUB`, `VND`, `AUD`, and `EUR`.
 - A user may report an observed current balance for a named account in a supported currency. The application converts that observation to the user's base currency for comparison with the calculated balance but does not store it as income or expense. Account-specific reconciliation does not change the MVP decision to report one total balance.
 - Preview totals show income and expense from complete non-transfer operations in the current message only. Transfers never affect those totals. An account balance is shown only from an explicit balance observation; never present income minus expense from one message as the user's real account balance.
+- Debt summaries follow the total balance, keep each debt in its original currency, show the combined amount grouped by currency, and show the amount for every counterparty. Show separately what the user owes and what others owe the user; never add unlike currencies together.
 - Changing the base currency changes derived totals and reports for that user only. Preserve original amounts, currencies, and dates so derived values can be recalculated deterministically instead of rewriting source facts.
 - When an observed balance is below the calculated balance, the bot starts a reconciliation conversation in plain, non-judgmental language, states the difference, and invites the user to recall missing expenses.
 - Reconciliation may produce one or more post-factum drafts. Every draft requires normal validation and independent confirmation, and the bot shows the remaining unexplained difference after each confirmed expense.
@@ -78,14 +82,15 @@ This is the living rules file for the budget app. We update it when decisions be
 ## Telegram Rules
 
 - Only allow configured Telegram user IDs.
-- A user without a stored base currency must choose one before transaction parsing starts. `/settings` shows and changes that user's currency without affecting another profile.
+- A user without a stored base currency must choose one before transaction parsing starts. Currency onboarding and `/settings` search by a code or familiar name in ordinary bot messages and affect only that user's profile.
 - Keep `/start`, `/settings`, `/reports`, and `/help` in the Telegram command menu.
 - Keep Telegram's native chat menu control. Its desktop focus outline and icon are client-owned; do not add a duplicate custom hamburger inside the report Mini App unless the product gains real in-app navigation.
 - Bot replies must sound like a concise, supportive conversation with a trusted companion: use ordinary first-person language, ask natural questions, and avoid robotic headings, bookkeeping jargon, or command-manual phrasing when a plain explanation works.
 - Bot replies must remain short and action-oriented; warmth must not obscure amounts, currencies, dates, account routes, uncertainty, or the next action.
 - Render Telegram previews as escaped HTML: make section headings, amount-plus-currency values, and categories bold, and escape every model-derived description, note, category, account, and ambiguity before sending it to Telegram.
 - Parsing failures should ask for a corrected message instead of silently guessing.
-- Show all drafts and balance observations from one user message in one numbered Telegram preview and manage it through a normal text reply, without an inline button grid.
+- Show all transaction and debt drafts from one user message in one Telegram preview and manage it through a normal text reply. Number debt items with `Д`; show a balance observation only in the summary.
+- In the Telegram preview, group ordinary transactions as income, then expense, then personal transfer. Preserve the original relative order inside each group, and use the displayed order consistently for item numbers and clarification references.
 - Collect missing amount, currency, category, account, and other ambiguities into one numbered clarification block instead of sending separate prompts.
 - Never truncate or replace any preview, clarification, comment, or ambiguity with an ellipsis when the complete message fits Telegram's 4,096-character limit. Compact content only after the complete preview actually exceeds that hard limit, while preserving every numbered item, every missing-field request, the reply instructions, and the no-write warning.
 - Destructive actions must require explicit confirmation.
@@ -102,6 +107,7 @@ This is the living rules file for the budget app. We update it when decisions be
 ## Notion Rules
 
 - Keep Notion database schema stable and documented.
+- Keep all owner transactions in one Notion data source; separate months with dynamic, calendar, or fixed archive views rather than creating one database per month.
 - Prefer explicit properties over packed JSON text fields.
 - All Notion writes should be idempotent when possible.
 - Store integration IDs or source hashes to prevent duplicate transactions.

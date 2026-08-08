@@ -4,9 +4,11 @@ import {
   CURRENCIES,
   TRANSACTION_CATEGORIES
 } from "../../budget/catalog.js";
+import { searchSupportedCurrencies } from "../../budget/currencySearch.js";
 import {
   calculateBudgetPreviewSummary,
-  type BudgetPreviewSummary
+  type BudgetPreviewSummary,
+  type DebtPosition
 } from "../../budget/previewSummary.js";
 import {
   isSupportedCurrency,
@@ -22,8 +24,8 @@ import {
 } from "../currency/frankfurterCurrencyConverter.js";
 import {
   createOpenAiTransactionParser,
-  type ParsedBalanceObservationDraft,
   type ParsedBudgetMessageDraft,
+  type ParsedDebtOperationDraft,
   type ParsedTransactionDraft,
   type TransactionTextParser
 } from "../openai/openAiTransactionParser.js";
@@ -48,6 +50,13 @@ type BudgetPreviewFormattingOptions = {
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 const PREVIEW_WARNING =
   "Пока это только черновик — в Notion ничего не записано.";
+const CURRENCY_SEARCH_PROMPT =
+  "Введите код или название валюты отдельным сообщением.";
+const currencySearchReplyMarkup = {
+  force_reply: true as const,
+  selective: true,
+  input_field_placeholder: "Например: EUR, евро или донг"
+};
 const previewReplyMarkup = {
   force_reply: true as const,
   selective: true,
@@ -114,7 +123,7 @@ export function createTelegramPreviewBot(
     if (!settings) {
       await ctx.reply(formatCurrencyOnboarding(), {
         parse_mode: "HTML",
-        reply_markup: createCurrencyKeyboard()
+        reply_markup: currencySearchReplyMarkup
       });
       return;
     }
@@ -145,7 +154,7 @@ export function createTelegramPreviewBot(
       await userSettingsRepository.findByTelegramUserId(telegramUserId);
     await ctx.reply(formatSettingsMessage(settings), {
       parse_mode: "HTML",
-      reply_markup: createCurrencyKeyboard()
+      reply_markup: currencySearchReplyMarkup
     });
   });
 
@@ -185,14 +194,10 @@ export function createTelegramPreviewBot(
     await ctx.editMessageText(
       isFirstSelection
         ? formatFirstCurrencySelection(currency)
-        : formatSettingsMessage({
-            telegramUserId,
-            baseCurrency: currency,
-            onboardingHelpShown: previous.onboardingHelpShown
-          }),
+        : formatCurrencySelectionUpdated(currency),
       {
         parse_mode: "HTML",
-        reply_markup: createCurrencyKeyboard()
+        reply_markup: { inline_keyboard: [] }
       }
     );
   });
@@ -202,10 +207,41 @@ export function createTelegramPreviewBot(
       const telegramUserId = requireTelegramUserId(ctx.from?.id);
       const settings =
         await userSettingsRepository.findByTelegramUserId(telegramUserId);
-      if (!settings) {
+      const currencySearchRequested =
+        settings === null ||
+        isCurrencySearchReply(ctx.message.reply_to_message);
+      if (currencySearchRequested) {
+        const matches = searchSupportedCurrencies(ctx.message.text);
+        if (matches.length === 1) {
+          const currency = matches[0]!;
+          const isFirstSelection = settings === null;
+          const savedSettings: UserSettings = {
+            telegramUserId,
+            baseCurrency: currency,
+            onboardingHelpShown: settings?.onboardingHelpShown ?? true
+          };
+          await userSettingsRepository.save(savedSettings);
+          await ctx.reply(
+            isFirstSelection
+              ? formatFirstCurrencySelection(currency)
+              : formatCurrencySelectionUpdated(currency),
+            { parse_mode: "HTML" }
+          );
+          return;
+        }
+
+        if (matches.length > 1) {
+          await ctx.reply("Нашёл несколько валют. Выберите нужную:", {
+            reply_markup: createCurrencySearchKeyboard(matches)
+          });
+          return;
+        }
+
         await ctx.reply(
-          "Сначала выберите основную валюту — в ней я буду показывать общий итог.",
-          { reply_markup: createCurrencyKeyboard() }
+          settings
+            ? formatCurrencySearchNotFound()
+            : `Сначала выберите основную валюту. ${formatCurrencySearchNotFound()}`,
+          { reply_markup: currencySearchReplyMarkup }
         );
         return;
       }
@@ -310,7 +346,11 @@ export function formatBudgetMessagePreview(
   parsed: ParsedBudgetMessageDraft,
   options: BudgetPreviewFormattingOptions = {}
 ): string {
-  if (parsed.transactions.length === 0 && parsed.balanceObservations.length === 0) {
+  if (
+    parsed.transactions.length === 0 &&
+    parsed.debtOperations.length === 0 &&
+    parsed.balanceObservations.length === 0
+  ) {
     const clarificationLines = parsed.ambiguities.map(
       (item) => `• ${escapeTelegramHtml(normalizeText(item))}`
     );
@@ -337,33 +377,38 @@ function buildBudgetMessagePreview(
   includeDetails: boolean,
   options: BudgetPreviewFormattingOptions
 ): string {
+  const orderedTransactions = orderTransactionsForPreview(parsed.transactions);
   const sections: string[] = [
     "<b>Вот что я понял из сообщения:</b>"
   ];
 
-  if (parsed.transactions.length) {
+  if (orderedTransactions.length) {
     sections.push(
       [
         "<b>Операции:</b>",
-        ...parsed.transactions.map((draft, index) =>
+        ...orderedTransactions.map((draft, index) =>
           formatCombinedTransaction(draft, index + 1, includeDetails)
         )
       ].join("\n")
     );
   }
 
-  if (parsed.balanceObservations.length) {
+  if (parsed.debtOperations.length) {
     sections.push(
       [
-        "<b>Ещё вижу остаток на счёте.</b> Держу его отдельно, чтобы не считать доходом или расходом:",
-        ...parsed.balanceObservations.map((observation, index) =>
-          formatCombinedBalanceObservation(observation, index + 1)
+        "<b>Долговые операции:</b>",
+        ...parsed.debtOperations.map((operation, index) =>
+          formatCombinedDebtOperation(operation, index + 1, includeDetails)
         )
       ].join("\n")
     );
   }
 
-  const clarifications = collectClarificationRequests(parsed, includeDetails);
+  const clarifications = collectClarificationRequests(
+    parsed,
+    orderedTransactions,
+    includeDetails
+  );
   if (clarifications.length) {
     sections.push(["<b>Осталось уточнить:</b>", ...clarifications].join("\n"));
   }
@@ -378,6 +423,26 @@ function buildBudgetMessagePreview(
   sections.push(PREVIEW_WARNING);
 
   return sections.join("\n\n");
+}
+
+function orderTransactionsForPreview(
+  transactions: ParsedTransactionDraft[]
+): ParsedTransactionDraft[] {
+  const directionOrder: Record<ParsedTransactionDraft["direction"], number> = {
+    income: 0,
+    expense: 1,
+    transfer: 2
+  };
+
+  return transactions
+    .map((transaction, originalIndex) => ({ transaction, originalIndex }))
+    .sort(
+      (left, right) =>
+        directionOrder[left.transaction.direction] -
+          directionOrder[right.transaction.direction] ||
+        left.originalIndex - right.originalIndex
+    )
+    .map(({ transaction }) => transaction);
 }
 
 async function formatUserBudgetMessagePreview(
@@ -435,16 +500,37 @@ function formatBudgetPreviewSummary(
   ];
 
   if (summary.observedBalances.length === 0) {
-    lines.push("<b>Остаток:</b> в этом сообщении не указан.");
+    lines.push("<b>Общий остаток:</b> в этом сообщении не указан.");
   } else {
-    for (const balance of summary.observedBalances) {
-      const account = balance.account
-        ? ` на «${escapeTelegramHtml(balance.account)}»`
-        : "";
-      lines.push(
-        `<b>Остаток${account}:</b> ${boldTelegramHtml(`${formatAmount(balance.amount)} ${summary.baseCurrency}`)}`
-      );
-    }
+    const totalObservedBalance = summary.observedBalances.reduce(
+      (total, balance) => total + balance.amount,
+      0
+    );
+    lines.push(
+      `<b>Общий остаток:</b> ${boldTelegramHtml(`${formatAmount(totalObservedBalance)} ${summary.baseCurrency}`)}`
+    );
+  }
+
+  if (summary.debt.owedByUser.length > 0) {
+    const hasReduction = summary.debt.owedByUser.some(
+      (position) => position.amount < 0
+    );
+    lines.push(
+      `<b>${hasReduction ? "Изменение общего долга" : "Общий долг"}:</b> ${boldTelegramHtml(formatDebtTotals(summary.debt.owedByUser))}`,
+      "<b>Кому должен:</b>",
+      ...formatDebtPositions(summary.debt.owedByUser)
+    );
+  }
+
+  if (summary.debt.owedToUser.length > 0) {
+    const hasReduction = summary.debt.owedToUser.some(
+      (position) => position.amount < 0
+    );
+    lines.push(
+      `<b>${hasReduction ? "Изменение долга мне" : "Всего должны мне"}:</b> ${boldTelegramHtml(formatDebtTotals(summary.debt.owedToUser))}`,
+      "<b>Кто должен:</b>",
+      ...formatDebtPositions(summary.debt.owedToUser)
+    );
   }
 
   if (summary.incompleteOperationCount > 0) {
@@ -456,9 +542,11 @@ function formatBudgetPreviewSummary(
   return lines.join("\n");
 }
 
-function createCurrencyKeyboard(): InlineKeyboard {
+function createCurrencySearchKeyboard(
+  currencies: readonly SupportedCurrency[]
+): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  for (const [index, currency] of CURRENCIES.entries()) {
+  for (const [index, currency] of currencies.entries()) {
     keyboard.text(currency, `settings:currency:${currency}`);
     if ((index + 1) % 3 === 0) {
       keyboard.row();
@@ -472,6 +560,9 @@ function formatCurrencyOnboarding(): string {
     "<b>Привет! Давайте сначала выберем основную валюту.</b>",
     "В ней я буду показывать общий доход, расход и остаток. Сами операции по-прежнему можно писать в любой поддерживаемой валюте.",
     "",
+    CURRENCY_SEARCH_PROMPT,
+    "Можно написать код или привычное название: EUR, евро, USD, доллар, VND, донг.",
+    "",
     "Выбор всегда можно изменить в разделе /settings."
   ].join("\n");
 }
@@ -484,7 +575,7 @@ function formatFirstCurrencySelection(currency: SupportedCurrency): string {
     "Получил 500 USD за фриланс, перевёл 200 USD с Crypto на Вьетнамский счёт и потратил 120к VND на кофе по QR.",
     "",
     "Я покажу понятный черновик. Если всё совпало, ответьте «всё верно». Если нет, можно написать: «3: валюта USD», «для всех счёт Карта» или «отмени 4».",
-    "Слово «тоже» повторяет последнее исправление для следующего пункта, а Б1, Б2 — это указанные остатки на счетах. Полная подсказка всегда есть в /help.",
+    "Слово «тоже» повторяет последнее исправление для следующего пункта. Долговые операции отмечаю буквой Д. Полная подсказка всегда есть в /help.",
     "",
     PREVIEW_WARNING
   ].join("\n");
@@ -492,7 +583,7 @@ function formatFirstCurrencySelection(currency: SupportedCurrency): string {
 
 function formatWelcomeBack(currency: SupportedCurrency): string {
   return [
-    "С возвращением! Напишите доходы, расходы или переводы обычным сообщением.",
+    "С возвращением! Напишите доходы, расходы, переводы или долговые операции обычным сообщением.",
     `Общий итог покажу в ${currency}. Изменить валюту можно в /settings.`,
     PREVIEW_WARNING
   ].join("\n");
@@ -504,8 +595,20 @@ function formatSettingsMessage(settings: UserSettings | null): string {
     settings
       ? `Основная валюта: <b>${settings.baseCurrency}</b>`
       : "Основная валюта ещё не выбрана.",
-    "В ней я показываю доход, расход и остаток. Выберите валюту ниже:"
+    "В ней я показываю доход, расход и остаток.",
+    CURRENCY_SEARCH_PROMPT
   ].join("\n");
+}
+
+function formatCurrencySelectionUpdated(currency: SupportedCurrency): string {
+  return [
+    `<b>Готово. Основная валюта: ${currency}.</b>`,
+    "Если захотите изменить её снова, откройте /settings."
+  ].join("\n");
+}
+
+function formatCurrencySearchNotFound(): string {
+  return "Не нашёл такую валюту. Напишите отдельно код или название: например, EUR, евро, USD или донг.";
 }
 
 function formatHelpMessage(): string {
@@ -517,9 +620,13 @@ function formatHelpMessage(): string {
     "• Вчера продукты 350к VND по QR",
     "• Получил 500 USD за фриланс",
     "• Перевёл 177 USD с Crypto на Вьетнамский счёт",
+    "• Взял в долг у Пети 100 USD на карту",
+    "• Вернул Пете 30 USD долга с карты",
+    "• Дал Ане в долг 50 EUR наличными",
+    "• Аня вернула 20 EUR долга наличными",
     "",
-    "После черновика можно ответить «всё верно» или написать исправление: «3: валюта USD», «для всех счёт Карта», «отмени 4». Слово «тоже» повторяет последнее исправление для следующего пункта, а Б1, Б2 — это указанные остатки на счетах.",
-    "Основная валюта меняется в /settings.",
+    "После черновика можно ответить «всё верно» или написать исправление: «3: валюта USD», «для всех счёт Карта», «отмени 4». Слово «тоже» повторяет последнее исправление для следующего пункта.",
+    "Основная валюта ищется по коду или названию через /settings.",
     "Доходы и расходы на диаграммах открываются через /reports.",
     "",
     PREVIEW_WARNING
@@ -589,31 +696,69 @@ function formatCombinedTransaction(
   return fields.join(" · ");
 }
 
-function formatCombinedBalanceObservation(
-  observation: ParsedBalanceObservationDraft,
-  position: number
+function formatCombinedDebtOperation(
+  operation: ParsedDebtOperationDraft,
+  position: number,
+  includeDetails: boolean
 ): string {
-  const amount = `${formatAmount(observation.amount)} ${observation.currency}`;
-  const date = formatIsoDate(observation.occurredOn);
-  const sentence = observation.account
-    ? `Б${position}. На счёте «${escapeTelegramHtml(observation.account)}» осталось ${boldTelegramHtml(amount)} на ${date}.`
-    : `Б${position}. Остаток ${boldTelegramHtml(amount)} на ${date}; счёт пока не указан.`;
+  const counterparty = escapeTelegramHtml(
+    operation.counterparty ?? "человек или организация не указаны"
+  );
+  const action = {
+    borrow: `Взял в долг — ${counterparty}`,
+    repay_borrowed: `Вернул долг — ${counterparty}`,
+    lend: `Дал в долг — ${counterparty}`,
+    collect: `Мне вернули долг — ${counterparty}`
+  }[operation.action];
+  const description = includeDetails
+    ? normalizeText(operation.description)
+    : truncateText(operation.description, 36);
+  const fields = [
+    `Д${position}. ${action} — ${boldTelegramHtml(formatDraftAmount(operation.amount, operation.currency))}`,
+    formatIsoDate(operation.occurredOn),
+    escapeTelegramHtml(operation.account ?? "счёт не указан"),
+    `«${escapeTelegramHtml(description)}»`
+  ];
 
-  if (observation.confidence < 0.6) {
-    return `${sentence} Тут я не до конца уверен.`;
+  if (includeDetails && operation.note) {
+    fields.push(`комментарий: ${escapeTelegramHtml(normalizeText(operation.note))}`);
   }
+  if (operation.confidence < 0.6) {
+    fields.push("низкая уверенность");
+  }
+  return fields.join(" · ");
+}
 
-  return sentence;
+function formatDebtTotals(positions: DebtPosition[]): string {
+  const totals = new Map<string, number>();
+  for (const position of positions) {
+    totals.set(
+      position.currency,
+      (totals.get(position.currency) ?? 0) + position.amount
+    );
+  }
+  return [...totals.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([currency, amount]) => `${formatAmount(amount)} ${currency}`)
+    .join(" · ");
+}
+
+function formatDebtPositions(positions: DebtPosition[]): string[] {
+  return positions.map(
+    (position) =>
+      `• ${escapeTelegramHtml(position.counterparty ?? "Не указано")} — ${boldTelegramHtml(`${formatAmount(position.amount)} ${position.currency}`)}`
+  );
 }
 
 function collectClarificationRequests(
   parsed: ParsedBudgetMessageDraft,
+  orderedTransactions: ParsedTransactionDraft[],
   includeDetails: boolean
 ): string[] {
   const requests: string[] = [];
   const messageMissingFields = new Set<MissingField>();
 
-  for (const [index, draft] of parsed.transactions.entries()) {
+  for (const [index, draft] of orderedTransactions.entries()) {
     const missingFields: MissingField[] = [];
     if (draft.amount === null) {
       missingFields.push("сумму");
@@ -658,20 +803,36 @@ function collectClarificationRequests(
     }
   }
 
-  for (const [index, observation] of parsed.balanceObservations.entries()) {
+  for (const [index, operation] of parsed.debtOperations.entries()) {
     const missingFields: MissingField[] = [];
-    if (observation.account === null) {
+    if (operation.amount === null) {
+      missingFields.push("сумму");
+    }
+    if (operation.currency === null) {
+      missingFields.push("валюту");
+    }
+    if (operation.counterparty === null) {
+      missingFields.push("человека или организацию");
+    }
+    if (operation.account === null) {
       missingFields.push("счёт");
-      messageMissingFields.add("счёт");
-      requests.push(`• Наблюдение баланса Б${index + 1} — укажите счёт.`);
+    }
+    for (const field of missingFields) {
+      messageMissingFields.add(field);
+    }
+
+    if (missingFields.length) {
+      requests.push(
+        `• Долговая операция Д${index + 1} «${escapeTelegramHtml(normalizeText(operation.description))}» — укажите ${joinRussianList(missingFields)}.`
+      );
     }
 
     if (includeDetails) {
-      for (const ambiguity of observation.ambiguities.filter(
+      for (const ambiguity of operation.ambiguities.filter(
         (item) => !ambiguityConcernsMissingField(item, missingFields)
       )) {
         requests.push(
-          `• Наблюдение баланса Б${index + 1} — ${escapeTelegramHtml(normalizeText(ambiguity))}`
+          `• Долговая операция Д${index + 1} — ${escapeTelegramHtml(normalizeText(ambiguity))}`
         );
       }
     }
@@ -726,6 +887,7 @@ type MissingField =
   | "сумму"
   | "валюту"
   | "категорию"
+  | "человека или организацию"
   | "счёт"
   | "счёт-источник"
   | "счёт-получатель";
@@ -738,6 +900,7 @@ function ambiguityConcernsMissingField(
     сумму: /сумм|amount/i,
     валюту: /валют|currency/i,
     категорию: /категор|category/i,
+    "человека или организацию": /челов|организац|контрагент|кому|у кого|кто|person|counterparty/i,
     счёт: /сч[её]т|account|кошел[её]к|крипт/i,
     "счёт-источник": /источник|source|откуда|со сч[её]т|с кошел/i,
     "счёт-получатель": /получател|destination|куда|на сч[её]т|в кошел/i
@@ -798,6 +961,17 @@ function getRepliedPreviewText(
   return replyToMessage.text.includes(PREVIEW_WARNING)
     ? replyToMessage.text
     : null;
+}
+
+function isCurrencySearchReply(
+  replyToMessage:
+    | { text?: string; from?: { is_bot: boolean } }
+    | undefined
+): boolean {
+  return Boolean(
+    replyToMessage?.from?.is_bot &&
+      replyToMessage.text?.includes(CURRENCY_SEARCH_PROMPT)
+  );
 }
 
 function isWholePreviewConfirmation(value: string): boolean {
