@@ -186,6 +186,7 @@ Exit condition: the bot returns verified monthly totals and a chart whose segmen
 - [x] Add the Telegram webhook HTTP endpoint for Vercel and register the production URL with Telegram.
 - [x] Deploy the owner-only parser preview to Vercel Production and register its Telegram webhook.
 - [x] Deploy commit `c4322c3` with owner-only confirmed Notion writes; deployment `dpl_6s23DRDPc4gEd5wVRD4dvQQTyLtd` is `Ready`, the production alias reports `service: telegram`, and Telegram reports zero pending updates and no webhook error.
+- [x] Deploy commit `3992999` with generic base-currency fields, owner USD settings, multi-wallet snapshots, and explicit balance anchors; deployment `dpl_6uGZAW1Twbobj3DwJhtXnU7SBBjm` is `READY`, the production alias reports `service: telegram`, the unsigned report API returns `401`, and Telegram reports zero pending updates with no webhook error.
 - [x] Deploy the owner-only Chart.js Mini App and report API to the personal Vercel surface; verify the static page returns `200`, an unsigned API request returns `401`, and a signed master request returns a valid empty August 2026 report.
 - [x] Register and verify the production Telegram menu commands `/start`, `/settings`, `/reports`, and `/help`; the webhook has no pending updates or reported error.
 - [ ] Perform an end-to-end production smoke test.
@@ -245,7 +246,7 @@ Exit condition: an invited user has an isolated budget and custom categories wit
 
 ## Current Gate — Confirmed Notion Save
 
-The owner-only save flow is deployed, locally verified, and the live Notion schema now uses generic base-currency fields with the owner profile set to USD. Production remains incomplete until the updated build is deployed and the first real same-date wallet-balance confirmation passes.
+The owner-only save flow is deployed, locally verified, and the live Notion schema now uses generic base-currency fields with the owner profile set to USD. Three synthetic USD contract rows were written successfully and moved to Notion trash. Production remains incomplete only until the first real same-date wallet-balance confirmation passes.
 
 ### Owner Smoke Test
 
@@ -278,7 +279,7 @@ The owner-only save flow is deployed, locally verified, and the live Notion sche
 
 ## Current Next Actions
 
-1. Deploy the generic USD/multi-wallet build, then confirm the first exact same-date wallet-balance Telegram message as the summed opening anchor and verify the retained receipt plus Notion rows.
+1. Confirm the first exact same-date wallet-balance Telegram message as the summed opening anchor and verify the retained receipt plus Notion rows.
 2. Run the mixed income, expense, debt, balance-mismatch, and pre-anchor-history production smoke cases.
 3. Inspect Vercel logs for save/cleanup failures and confirm they contain no raw budget text or secrets.
 4. Complete a concise receipt with per-operation original/converted details and implement recalculation for backdated rows on or after the active anchor.
