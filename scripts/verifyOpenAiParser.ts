@@ -241,11 +241,15 @@ console.log(`Live parser reasoning effort: ${reasoningEffort}.`);
 
 let passed = 0;
 let revisionSource: ParsedBudgetMessageDraft | undefined;
+let debtRevisionSource: ParsedBudgetMessageDraft | undefined;
 
 for (const [index, verificationCase] of verificationCases.entries()) {
   const parsed = await parser.parse(verificationCase.input, fixedNow);
   if (index === 0) {
     revisionSource = parsed;
+  }
+  if ((verificationCase.expectedDebtOperations?.length ?? 0) > 0) {
+    debtRevisionSource = parsed;
   }
   const errors = verifyResult(parsed, verificationCase);
   const counts = countDirections(parsed);
@@ -288,6 +292,7 @@ console.log(`Live parser verification: ${passed}/${verificationCases.length} pas
 
 let revisionPassed = false;
 let accountTransferRevisionPassed = false;
+let debtRevisionPassed = false;
 if (revisionSource) {
   const revised = await parser.revise(
     formatBudgetMessagePreview(revisionSource),
@@ -346,10 +351,32 @@ if (revisionSource) {
   );
 }
 
+if (debtRevisionSource) {
+  const revisedDebt = await parser.revise(
+    formatBudgetMessagePreview(debtRevisionSource),
+    "долг 1: счёт Сбережения",
+    fixedNow
+  );
+  debtRevisionPassed =
+    revisedDebt.transactions.length === 0 &&
+    revisedDebt.debtOperations.length === 4 &&
+    revisedDebt.debtOperations[0]?.action === "borrow" &&
+    revisedDebt.debtOperations[0]?.account === "Сбережения" &&
+    revisedDebt.debtOperations[1]?.account === "Карта" &&
+    revisedDebt.debtOperations[2]?.account === "Наличные" &&
+    revisedDebt.debtOperations[3]?.account === "Карта";
+  console.log(
+    `Live debt-number revision: ${debtRevisionPassed ? "PASS" : "FAIL"} — ` +
+      `transactions=${revisedDebt.transactions.length}, ` +
+      `debts=${revisedDebt.debtOperations.length}`
+  );
+}
+
 if (
   passed !== verificationCases.length ||
   !revisionPassed ||
-  !accountTransferRevisionPassed
+  !accountTransferRevisionPassed ||
+  !debtRevisionPassed
 ) {
   process.exitCode = 1;
 }

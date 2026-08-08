@@ -50,6 +50,7 @@ Exit condition: the bot token and owner allowlist are configured in both environ
 - [x] Track one total balance in each user's selected base currency in the MVP rather than separate calculated per-account balances.
 - [x] Include transfers between supported personal accounts; require a source and destination account while keeping the user's total balance unchanged.
 - [x] Define debt balance behavior: borrowing and collection add available money, repayment and lending subtract it, and none of the four count as income or expense.
+- [ ] Choose the reconciliation tolerance in the base currency, including a relative percentage and an absolute minimum that account for differences between actual exchange execution and official historical rates. Blocked: exact thresholds are not yet confirmed.
 - [x] Provide 11 representative Telegram transaction messages, including slang, abbreviations, and a crypto-account example; keep the reproducible set in `scripts/verifyOpenAiParser.ts`.
 - [x] Discard raw Telegram text after the normalized transaction is confirmed.
 
@@ -97,8 +98,9 @@ Exit condition: one verified transaction can be written exactly once through the
 - [x] Add `OPENAI_API_KEY` to Vercel Production and Development.
 - [x] Deploy an owner-only Telegram parser preview that clearly states confirmations do not write to Notion.
 - [x] Rerun the live parser after the debt schema and prompt-cache `v2` change: all 12 synthetic parser cases, including four debt actions in mixed currencies, plus both reply-revision cases passed; 14 requests used 20,924 total tokens with 12,232 cached input tokens.
+- [x] Rerun the live parser after independent numeric debt labels and prompt-cache `v3`: all 12 parser cases, both transaction revisions, and `долг 1: счёт Сбережения` passed; 15 requests used 22,499 total tokens with 12,232 cached input tokens.
 - [x] Add deterministic fallback/error messages for incomplete or ambiguous input; missing transaction amount or currency remains explicit instead of being guessed.
-- [x] Show all transaction and debt drafts from one input in one Telegram preview; number debt items with `Д` and do not use a permanent inline action grid.
+- [x] Show all transaction and debt drafts from one input in one Telegram preview; number each separate section from `1` without a `Д` prefix, address debt corrections as `долг N`, and do not use a permanent inline action grid.
 - [x] Group ordinary Telegram preview rows as income, then expense, then personal transfer while preserving relative order within each group; keep clarification numbers aligned with the displayed rows.
 - [x] Split the converted Telegram summary into readable paragraphs for income and expense, debts owed by the user, debts owed to the user, and total balance; show `Общий остаток` last.
 - [x] Rewrite the combined preview in conversational Russian: show an explicit balance observation only once as `Общий остаток`, without a separate `Б1` row or account label, ask whether everything matches, and present corrections as natural examples instead of system instructions.
@@ -132,7 +134,7 @@ Exit condition: tested conversions are deterministic and retain all audit fields
 - [x] Require an initial base-currency choice before parsing and make onboarding plus `/settings` search `USD`, `RUB`, `VND`, `AUD`, and `EUR` by code or familiar name inside Telegram.
 - [x] Add `/start`, `/settings`, `/reports`, and `/help` command definitions for the Telegram menu.
 - [x] Show preview income, expense, and explicit observed account balances in the user's base currency; exclude transfers and never invent a balance when none was stated.
-- [x] Show debt totals after `Общий остаток`, grouped by original currency with a per-counterparty breakdown for both `Я должен` and `Мне должны` positions.
+- [x] Show debt totals grouped by original currency with a per-counterparty breakdown for both `Я должен` and `Мне должны` positions, followed by `Общий остаток` as the final summary paragraph.
 - [x] Keep routine preview guidance short and move detailed correction help to onboarding and `/help`.
 - [x] Wire grammY to the configured bot token.
 - [x] Reject every Telegram user not present in `TELEGRAM_ALLOWED_USER_IDS`.
@@ -140,15 +142,16 @@ Exit condition: tested conversions are deterministic and retain all audit fields
 - [x] Parse an informal message through OpenAI.
 - [x] Show the normalized draft and accept confirmation, corrections, or cancellation through an ordinary text reply.
 - [ ] Convert the confirmed amount to the user's selected base currency.
-- [ ] Calculate the running balance in that base currency after every confirmed transaction: income adds, expense subtracts, and a transfer does not change the total balance.
+- [ ] Calculate and show the running balance in the user's base currency after every confirmed operation: income, borrowing, and collected repayments add; expense, repayment of borrowed money, and lending subtract; personal transfers do not change the total.
 - [ ] Recalculate the affected running balances after a backdated transaction is inserted, corrected, or deleted.
 - [ ] Save the confirmed transaction to Notion.
 - [ ] Prevent duplicate writes using the Telegram message ID.
 - [ ] Save confirmed debt actions idempotently and recalculate later outstanding positions for the affected counterparty and original currency after inserts, corrections, or deletions.
 - [ ] Return a concise receipt containing original amount, converted base-currency amount, remaining balance, category, account route when applicable, and date.
-- [ ] Accept an observed current balance for a named account in a supported currency and compare its converted base-currency value with the calculated balance.
-- [ ] When the observed balance is lower, explain the difference conversationally and collect one or more post-factum expense drafts.
+- [ ] Accept and persist a confirmed user-stated balance as an authoritative reconciliation observation, never as income or expense; compare its converted base-currency value with the calculated balance.
+- [ ] If an observation matches within the configured FX-aware tolerance, accept it as the new balance anchor; otherwise explain the difference conversationally and collect one or more post-factum drafts before replacing the anchor.
 - [ ] Require independent confirmation for every recalled expense, show the remaining unexplained difference, and allow the user to stop without inventing an adjustment.
+- [ ] After the full idempotent save succeeds, delete the agreed Telegram source and temporary preview messages; never delete them on a failed write or in preview mode. Blocked: confirm whether cleanup covers the user's source message, the bot's previews/corrections, or both, and whether the final receipt remains.
 
 Exit condition: one real Telegram message completes the full confirmed path into Notion exactly once.
 
@@ -253,13 +256,13 @@ The multi-operation preview is deployed and its health endpoint and webhook are 
 - [ ] Verify that missing accounts, currencies, categories, or amounts are listed together with the affected transaction numbers.
 - [ ] Reply `для всех счёт Вьетнамский счёт`; expect one revised preview with that account applied to every compatible numbered item.
 - [ ] Reply with a targeted correction such as `3: валюта USD`; expect unchanged items to be preserved and only item 3 updated.
-- [ ] Reply with sequential lines ending in `тоже`; expect the last explicit correction to continue through each next visible transaction or `Д` debt item.
+- [ ] Reply with sequential lines ending in `тоже`; expect the last explicit correction to continue through each next visible ordinary or debt item, using `долг N` when directly targeting the debt section.
 - [ ] Reply `отмени 4`; expect only transaction 4 to disappear from the revised preview.
 - [ ] Reply `всё верно`; verify the bot says all items were checked and nothing was written to Notion.
 - [ ] Open the Notion `Транзакции` database and verify that the preview test created no new transaction rows.
 - [ ] Repeat the complex case with `Аванс изначально Crypto, потом перевод всей суммы на вьет счёт`; expect income on `Crypto`, a separate `Crypto → Вьетнамский счёт` transfer, all later expenses and the balance observation on `Вьетнамский счёт`, and no prematurely truncated clarification.
 - [ ] Search the onboarding currency with `дол`; expect `USD` and `AUD` choices, then search `/settings` with `евро` and expect `EUR` without calling the transaction parser.
-- [ ] Send one synthetic message that borrows and repays USD with one person and lends/collects another currency with another person; expect four `Д` items, no ordinary income/expense classification, and original-currency totals plus per-person breakdown after `Общий остаток`.
+- [ ] Send one synthetic message that borrows and repays USD with one person and lends/collects another currency with another person; expect four independently numbered debt items without a `Д` prefix, no ordinary income/expense classification, and original-currency totals plus per-person breakdown before the final `Общий остаток`.
 - [ ] Record any incorrect field, awkward wording, missing reply, or slow response. Share the test phrase, expected result, and actual result without any credentials.
 
 ### Follow-up
@@ -273,7 +276,9 @@ The multi-operation preview is deployed and its health endpoint and webhook are 
 1. Complete the remaining owner interaction smoke tests for `/start`, `/settings`, `/reports`, and message summaries inside Telegram without writing financial data to Notion.
 2. Provision the dedicated server and persistent SQLite volume, configure `USER_DATABASE_PATH`, and verify backup plus restore before relying on saved non-master profiles.
 3. Provide an exact opening balance anchor and effective date in the selected base currency.
-4. Migrate the owner's fixed-EUR Notion fields to a generic verified base-currency representation before enabling non-EUR confirmed writes.
-5. Implement the first verified repository write.
-6. Confirm OpenAI API billing safeguards before enabling the save flow.
-7. Add persistent debt storage and an accumulated bot debt report before treating preview debt deltas as current outstanding balances.
+4. Confirm the reconciliation tolerance: relative percentage plus absolute base-currency minimum.
+5. Confirm Telegram cleanup scope after a successful write: source message, bot previews/corrections, or both, and whether the final receipt remains.
+6. Migrate the owner's fixed-EUR Notion fields to a generic verified base-currency representation before enabling non-EUR confirmed writes.
+7. Implement the first verified repository write.
+8. Confirm OpenAI API billing safeguards before enabling the save flow.
+9. Add persistent debt storage and an accumulated bot debt report before treating preview debt deltas as current outstanding balances.

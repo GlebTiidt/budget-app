@@ -581,7 +581,7 @@ function formatFirstCurrencySelection(currency: SupportedCurrency): string {
     "Получил 500 USD за фриланс, перевёл 200 USD с Crypto на Вьетнамский счёт и потратил 120к VND на кофе по QR.",
     "",
     "Я покажу понятный черновик. Если всё совпало, ответьте «всё верно». Если нет, можно написать: «3: валюта USD», «для всех счёт Карта» или «отмени 4».",
-    "Слово «тоже» повторяет последнее исправление для следующего пункта. Долговые операции отмечаю буквой Д. Полная подсказка всегда есть в /help.",
+    "Слово «тоже» повторяет последнее исправление для следующего пункта. Для исправления долга напишите, например: «долг 2: счёт Карта». Полная подсказка всегда есть в /help.",
     "",
     PREVIEW_WARNING
   ].join("\n");
@@ -631,7 +631,7 @@ function formatHelpMessage(): string {
     "• Дал Ане в долг 50 EUR наличными",
     "• Аня вернула 20 EUR долга наличными",
     "",
-    "После черновика можно ответить «всё верно» или написать исправление: «3: валюта USD», «для всех счёт Карта», «отмени 4». Слово «тоже» повторяет последнее исправление для следующего пункта.",
+    "После черновика можно ответить «всё верно» или написать исправление: «3: валюта USD», «долг 2: счёт Карта», «для всех счёт Карта», «отмени 4». Обычный номер относится к разделу «Операции», а слово «долг» — к номеру в разделе «Долговые операции». Слово «тоже» повторяет последнее исправление для следующего пункта.",
     "Основная валюта ищется по коду или названию через /settings.",
     "Доходы и расходы на диаграммах открываются через /reports.",
     "",
@@ -720,7 +720,7 @@ function formatCombinedDebtOperation(
     ? normalizeText(operation.description)
     : truncateText(operation.description, 36);
   const fields = [
-    `Д${position}. ${action} — ${boldTelegramHtml(formatDraftAmount(operation.amount, operation.currency))}`,
+    `${position}. ${action} — ${boldTelegramHtml(formatDraftAmount(operation.amount, operation.currency))}`,
     formatIsoDate(operation.occurredOn),
     escapeTelegramHtml(operation.account ?? "счёт не указан"),
     `«${escapeTelegramHtml(description)}»`
@@ -829,7 +829,7 @@ function collectClarificationRequests(
 
     if (missingFields.length) {
       requests.push(
-        `• Долговая операция Д${index + 1} «${escapeTelegramHtml(normalizeText(operation.description))}» — укажите ${joinRussianList(missingFields)}.`
+        `• Долговая операция ${index + 1} «${escapeTelegramHtml(normalizeText(operation.description))}» — укажите ${joinRussianList(missingFields)}.`
       );
     }
 
@@ -838,7 +838,7 @@ function collectClarificationRequests(
         (item) => !ambiguityConcernsMissingField(item, missingFields)
       )) {
         requests.push(
-          `• Долговая операция Д${index + 1} — ${escapeTelegramHtml(normalizeText(ambiguity))}`
+          `• Долговая операция ${index + 1} — ${escapeTelegramHtml(normalizeText(ambiguity))}`
         );
       }
     }

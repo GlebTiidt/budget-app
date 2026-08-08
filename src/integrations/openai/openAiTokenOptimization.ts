@@ -35,7 +35,7 @@ type TokenOptimizedRequestFields = Pick<
 >;
 
 const MAX_BUDGET_OUTPUT_TOKENS = 8_000;
-const PROMPT_CACHE_VERSION = "v2";
+const PROMPT_CACHE_VERSION = "v3";
 
 export function buildTokenOptimizedInput(
   options: TokenOptimizedInputOptions

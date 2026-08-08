@@ -75,10 +75,10 @@ test("formats income before expenses while keeping each group stable", () => {
   assert.match(preview, /2\. Расход — <b>120[  ]000 VND<\/b>/);
   assert.match(preview, /3\. Расход — <b>70 USD<\/b>/);
   assert.match(preview, /4\. Перевод — <b>200 USD<\/b>/);
-  assert.match(preview, /Д1\. Взял в долг — Марина/);
+  assert.match(preview, /<b>Долговые операции:<\/b>\n1\. Взял в долг — Марина/);
   assert.ok(preview.indexOf("2. Расход") < preview.indexOf("3. Расход"));
   assert.ok(preview.indexOf("3. Расход") < preview.indexOf("4. Перевод"));
-  assert.ok(preview.indexOf("4. Перевод") < preview.indexOf("Д1. Взял в долг"));
+  assert.ok(preview.indexOf("4. Перевод") < preview.indexOf("1. Взял в долг"));
   assert.match(preview, /<b>Кофешоп<\/b>/);
   assert.doesNotMatch(preview, /Б1\.|Ещё вижу остаток|Держу его отдельно/);
   assert.match(
@@ -213,10 +213,11 @@ test("shows debt operations separately and puts total balance last", () => {
     }
   );
 
-  assert.match(preview, /Д1\. Взял в долг — Петя/);
-  assert.match(preview, /Д2\. Вернул долг — Петя/);
-  assert.match(preview, /Д3\. Дал в долг — Аня/);
-  assert.match(preview, /Д4\. Мне вернули долг — Аня/);
+  assert.match(preview, /<b>Долговые операции:<\/b>\n1\. Взял в долг — Петя/);
+  assert.match(preview, /2\. Вернул долг — Петя/);
+  assert.match(preview, /3\. Дал в долг — Аня/);
+  assert.match(preview, /4\. Мне вернули долг — Аня/);
+  assert.doesNotMatch(preview, /Д[1-4]\./);
   assert.doesNotMatch(preview, /Б1\./);
   assert.ok(preview.indexOf("Общий долг") < preview.indexOf("Общий остаток"));
   assert.ok(preview.indexOf("Всего должны мне") < preview.indexOf("Общий остаток"));

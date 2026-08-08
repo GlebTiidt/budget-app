@@ -25,6 +25,8 @@ Prompt-cache reads and writes were both zero. The complete parse requests were a
 
 The debt-aware structured contract and prompt-cache `v2` were verified on 2026-08-08. All 12 parser cases and both reply revisions passed with `reasoning: none`. Across 14 requests, the API reported 18,323 input tokens, 12,232 cached input tokens (`66.8%` of input), 1,112 cache-write tokens, 2,601 output tokens, zero reasoning tokens, and 20,924 total tokens. The prefix crossed the cache threshold because the required debt rules and schema grew materially; no filler was added.
 
+The independently numbered debt-section contract and prompt-cache `v3` were verified on 2026-08-08. All 12 parser cases, both transaction reply revisions, and the new `долг 1: счёт Сбережения` revision passed with `reasoning: none`. Across 15 requests, the API reported 19,630 input tokens, 12,232 cached input tokens (`62.3%` of input), 1,112 cache-write tokens, 2,869 output tokens, zero reasoning tokens, and 22,499 total tokens.
+
 ## Official OpenAI Guidance Used
 
 - [GPT-5.6 guidance](https://developers.openai.com/api/docs/guides/latest-model): prefer lean prompts, choose reasoning effort through representative evaluations, and measure cache reads and writes.

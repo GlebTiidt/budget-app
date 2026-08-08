@@ -42,13 +42,15 @@ test("serializes revision lines without losing their order", () => {
   const prompt = serializeRevisionPromptToToon({
     ...context,
     currentPreviewLines: [
+      "Операции:",
       "1. Доход — 177 USD · Crypto",
-      "Д1. Взял в долг — Петя · 350 USD",
+      "Долговые операции:",
+      "1. Взял в долг — Петя · 350 USD",
       "Общий остаток: 20 000 VND"
     ],
     userReplyLines: [
       "1: потом перевод на Вьетнамский счёт",
-      "Д1: счёт Карта"
+      "долг 1: счёт Карта"
     ]
   });
   const decoded = decode(unwrapToonBlock(prompt)) as {
@@ -57,13 +59,15 @@ test("serializes revision lines without losing their order", () => {
   };
 
   assert.deepEqual(decoded.currentPreviewLines, [
+    "Операции:",
     "1. Доход — 177 USD · Crypto",
-    "Д1. Взял в долг — Петя · 350 USD",
+    "Долговые операции:",
+    "1. Взял в долг — Петя · 350 USD",
     "Общий остаток: 20 000 VND"
   ]);
   assert.deepEqual(decoded.userReplyLines, [
     "1: потом перевод на Вьетнамский счёт",
-    "Д1: счёт Карта"
+    "долг 1: счёт Карта"
   ]);
 });
 
