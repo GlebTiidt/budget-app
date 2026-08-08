@@ -100,6 +100,7 @@ Exit condition: one verified transaction can be written exactly once through the
 - [x] Add deterministic fallback/error messages for incomplete or ambiguous input; missing transaction amount or currency remains explicit instead of being guessed.
 - [x] Show all transaction and debt drafts from one input in one Telegram preview; number debt items with `Д` and do not use a permanent inline action grid.
 - [x] Group ordinary Telegram preview rows as income, then expense, then personal transfer while preserving relative order within each group; keep clarification numbers aligned with the displayed rows.
+- [x] Split the converted Telegram summary into readable paragraphs for income and expense, total balance, debts owed by the user, and debts owed to the user.
 - [x] Rewrite the combined preview in conversational Russian: show an explicit balance observation only once as `Общий остаток`, without a separate `Б1` row or account label, ask whether everything matches, and present corrections as natural examples instead of system instructions.
 - [x] Render preview headings, amount-plus-currency values, and categories in bold with safely escaped Telegram HTML.
 - [x] Ask for every missing amount, currency, category, or account in one numbered clarification block.

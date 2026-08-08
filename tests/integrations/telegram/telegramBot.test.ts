@@ -221,10 +221,23 @@ test("shows debt operations separately and reports them after total balance", ()
   assert.ok(preview.indexOf("Общий остаток") < preview.indexOf("Общий долг"));
   assert.match(
     preview,
+    /<b>Итог этого сообщения в EUR:<\/b>\n\n<b>Доход:<\/b>.*\n<b>Расход:<\/b>/
+  );
+  assert.match(preview, /<b>Расход:<\/b>.*\n\n<b>Общий остаток:<\/b>/);
+  assert.match(
+    preview,
+    /<b>Общий остаток:<\/b>.*\n\n<b>Общий долг:<\/b>/
+  );
+  assert.match(
+    preview,
     /<b>Общий долг:<\/b> <b>100 EUR · 350 USD<\/b>/
   );
   assert.match(preview, /Петя — <b>350 USD<\/b>/);
   assert.match(preview, /Аня — <b>100 EUR<\/b>/);
+  assert.match(
+    preview,
+    /Аня — <b>100 EUR<\/b>\n\n<b>Всего должны мне:<\/b>/
+  );
   assert.match(
     preview,
     /<b>Всего должны мне:<\/b> <b>2[  ]000[  ]000 VND<\/b>/

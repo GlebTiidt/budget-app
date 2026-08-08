@@ -489,24 +489,26 @@ function formatBudgetPreviewSummary(
     return [
       heading,
       `Сейчас не получилось пересчитать суммы в ${options.baseCurrency}. Попробуйте ещё раз чуть позже.`
-    ].join("\n");
+    ].join("\n\n");
   }
 
   const summary = options.summary;
-  const lines = [
+  const sections = [
     heading,
-    `<b>Доход:</b> ${boldTelegramHtml(`${formatAmount(summary.income)} ${summary.baseCurrency}`)}`,
-    `<b>Расход:</b> ${boldTelegramHtml(`${formatAmount(summary.expense)} ${summary.baseCurrency}`)}`
+    [
+      `<b>Доход:</b> ${boldTelegramHtml(`${formatAmount(summary.income)} ${summary.baseCurrency}`)}`,
+      `<b>Расход:</b> ${boldTelegramHtml(`${formatAmount(summary.expense)} ${summary.baseCurrency}`)}`
+    ].join("\n")
   ];
 
   if (summary.observedBalances.length === 0) {
-    lines.push("<b>Общий остаток:</b> в этом сообщении не указан.");
+    sections.push("<b>Общий остаток:</b> в этом сообщении не указан.");
   } else {
     const totalObservedBalance = summary.observedBalances.reduce(
       (total, balance) => total + balance.amount,
       0
     );
-    lines.push(
+    sections.push(
       `<b>Общий остаток:</b> ${boldTelegramHtml(`${formatAmount(totalObservedBalance)} ${summary.baseCurrency}`)}`
     );
   }
@@ -515,10 +517,12 @@ function formatBudgetPreviewSummary(
     const hasReduction = summary.debt.owedByUser.some(
       (position) => position.amount < 0
     );
-    lines.push(
-      `<b>${hasReduction ? "Изменение общего долга" : "Общий долг"}:</b> ${boldTelegramHtml(formatDebtTotals(summary.debt.owedByUser))}`,
-      "<b>Кому должен:</b>",
-      ...formatDebtPositions(summary.debt.owedByUser)
+    sections.push(
+      [
+        `<b>${hasReduction ? "Изменение общего долга" : "Общий долг"}:</b> ${boldTelegramHtml(formatDebtTotals(summary.debt.owedByUser))}`,
+        "<b>Кому должен:</b>",
+        ...formatDebtPositions(summary.debt.owedByUser)
+      ].join("\n")
     );
   }
 
@@ -526,20 +530,22 @@ function formatBudgetPreviewSummary(
     const hasReduction = summary.debt.owedToUser.some(
       (position) => position.amount < 0
     );
-    lines.push(
-      `<b>${hasReduction ? "Изменение долга мне" : "Всего должны мне"}:</b> ${boldTelegramHtml(formatDebtTotals(summary.debt.owedToUser))}`,
-      "<b>Кто должен:</b>",
-      ...formatDebtPositions(summary.debt.owedToUser)
+    sections.push(
+      [
+        `<b>${hasReduction ? "Изменение долга мне" : "Всего должны мне"}:</b> ${boldTelegramHtml(formatDebtTotals(summary.debt.owedToUser))}`,
+        "<b>Кто должен:</b>",
+        ...formatDebtPositions(summary.debt.owedToUser)
+      ].join("\n")
     );
   }
 
   if (summary.incompleteOperationCount > 0) {
-    lines.push(
+    sections.push(
       `Итог пока считает только заполненные операции: ${summary.incompleteOperationCount} ${pluralizeOperation(summary.incompleteOperationCount)} нужно уточнить.`
     );
   }
 
-  return lines.join("\n");
+  return sections.join("\n\n");
 }
 
 function createCurrencySearchKeyboard(
