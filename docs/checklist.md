@@ -50,7 +50,7 @@ Exit condition: the bot token and owner allowlist are configured in both environ
 - [x] Track one total balance in each user's selected base currency in the MVP rather than separate calculated per-account balances.
 - [x] Include transfers between supported personal accounts; require a source and destination account while keeping the user's total balance unchanged.
 - [x] Define debt balance behavior: borrowing and collection add available money, repayment and lending subtract it, and none of the four count as income or expense.
-- [ ] Choose the reconciliation tolerance in the base currency, including a relative percentage and an absolute minimum that account for differences between actual exchange execution and official historical rates. Blocked: exact thresholds are not yet confirmed.
+- [x] Set the owner's EUR reconciliation tolerance to the greater of `2%` of the absolute calculated balance or `5 EUR`; define an equivalent absolute floor before enabling another base currency.
 - [x] Provide 11 representative Telegram transaction messages, including slang, abbreviations, and a crypto-account example; keep the reproducible set in `scripts/verifyOpenAiParser.ts`.
 - [x] Discard raw Telegram text after the normalized transaction is confirmed.
 
@@ -151,7 +151,7 @@ Exit condition: tested conversions are deterministic and retain all audit fields
 - [ ] Accept and persist a confirmed user-stated balance as an authoritative reconciliation observation, never as income or expense; compare its converted base-currency value with the calculated balance.
 - [ ] If an observation matches within the configured FX-aware tolerance, accept it as the new balance anchor; otherwise explain the difference conversationally and collect one or more post-factum drafts before replacing the anchor.
 - [ ] Require independent confirmation for every recalled expense, show the remaining unexplained difference, and allow the user to stop without inventing an adjustment.
-- [ ] After the full idempotent save succeeds, delete the agreed Telegram source and temporary preview messages; never delete them on a failed write or in preview mode. Blocked: confirm whether cleanup covers the user's source message, the bot's previews/corrections, or both, and whether the final receipt remains.
+- [ ] After the full idempotent save succeeds, delete the user's source financial message and the bot's temporary preview/correction messages while retaining the final receipt; never delete anything on a failed write or in preview mode.
 
 Exit condition: one real Telegram message completes the full confirmed path into Notion exactly once.
 
@@ -276,9 +276,8 @@ The multi-operation preview is deployed and its health endpoint and webhook are 
 1. Complete the remaining owner interaction smoke tests for `/start`, `/settings`, `/reports`, and message summaries inside Telegram without writing financial data to Notion.
 2. Provision the dedicated server and persistent SQLite volume, configure `USER_DATABASE_PATH`, and verify backup plus restore before relying on saved non-master profiles.
 3. Provide an exact opening balance anchor and effective date in the selected base currency.
-4. Confirm the reconciliation tolerance: relative percentage plus absolute base-currency minimum.
-5. Confirm Telegram cleanup scope after a successful write: source message, bot previews/corrections, or both, and whether the final receipt remains.
-6. Migrate the owner's fixed-EUR Notion fields to a generic verified base-currency representation before enabling non-EUR confirmed writes.
-7. Implement the first verified repository write.
-8. Confirm OpenAI API billing safeguards before enabling the save flow.
-9. Add persistent debt storage and an accumulated bot debt report before treating preview debt deltas as current outstanding balances.
+4. Migrate the owner's fixed-EUR Notion fields to a generic verified base-currency representation before enabling non-EUR confirmed writes.
+5. Implement the first verified repository write.
+6. Confirm OpenAI API billing safeguards before enabling the save flow.
+7. Add persistent debt storage and an accumulated bot debt report before treating preview debt deltas as current outstanding balances.
+8. Add post-save Telegram cleanup only after the idempotent write and retained final receipt are verified.
