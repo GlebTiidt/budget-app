@@ -501,18 +501,6 @@ function formatBudgetPreviewSummary(
     ].join("\n")
   ];
 
-  if (summary.observedBalances.length === 0) {
-    sections.push("<b>Общий остаток:</b> в этом сообщении не указан.");
-  } else {
-    const totalObservedBalance = summary.observedBalances.reduce(
-      (total, balance) => total + balance.amount,
-      0
-    );
-    sections.push(
-      `<b>Общий остаток:</b> ${boldTelegramHtml(`${formatAmount(totalObservedBalance)} ${summary.baseCurrency}`)}`
-    );
-  }
-
   if (summary.debt.owedByUser.length > 0) {
     const hasReduction = summary.debt.owedByUser.some(
       (position) => position.amount < 0
@@ -542,6 +530,18 @@ function formatBudgetPreviewSummary(
   if (summary.incompleteOperationCount > 0) {
     sections.push(
       `Итог пока считает только заполненные операции: ${summary.incompleteOperationCount} ${pluralizeOperation(summary.incompleteOperationCount)} нужно уточнить.`
+    );
+  }
+
+  if (summary.observedBalances.length === 0) {
+    sections.push("<b>Общий остаток:</b> в этом сообщении не указан.");
+  } else {
+    const totalObservedBalance = summary.observedBalances.reduce(
+      (total, balance) => total + balance.amount,
+      0
+    );
+    sections.push(
+      `<b>Общий остаток:</b> ${boldTelegramHtml(`${formatAmount(totalObservedBalance)} ${summary.baseCurrency}`)}`
     );
   }
 

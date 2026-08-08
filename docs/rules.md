@@ -91,7 +91,7 @@ This is the living rules file for the budget app. We update it when decisions be
 - Parsing failures should ask for a corrected message instead of silently guessing.
 - Show all transaction and debt drafts from one user message in one Telegram preview and manage it through a normal text reply. Number debt items with `Д`; show a balance observation only in the summary.
 - In the Telegram preview, group ordinary transactions as income, then expense, then personal transfer. Preserve the original relative order inside each group, and use the displayed order consistently for item numbers and clarification references.
-- Separate the converted preview summary into readable paragraphs for income and expense, observed total balance, what the user owes, and what others owe the user. Keep the heading, labels, and counterparty rows inside their logical block.
+- Separate the converted preview summary into readable paragraphs for income and expense, what the user owes, what others owe the user, and the observed total balance. Keep the heading, labels, and counterparty rows inside their logical block, and show `Общий остаток` as the final summary paragraph.
 - Collect missing amount, currency, category, account, and other ambiguities into one numbered clarification block instead of sending separate prompts.
 - Never truncate or replace any preview, clarification, comment, or ambiguity with an ellipsis when the complete message fits Telegram's 4,096-character limit. Compact content only after the complete preview actually exceeds that hard limit, while preserving every numbered item, every missing-field request, the reply instructions, and the no-write warning.
 - Destructive actions must require explicit confirmation.

@@ -170,7 +170,7 @@ test("formats a personal transfer as a complete account route", () => {
   );
 });
 
-test("shows debt operations separately and reports them after total balance", () => {
+test("shows debt operations separately and puts total balance last", () => {
   const preview = formatBudgetMessagePreview(
     {
       transactions: [],
@@ -218,15 +218,15 @@ test("shows debt operations separately and reports them after total balance", ()
   assert.match(preview, /Д3\. Дал в долг — Аня/);
   assert.match(preview, /Д4\. Мне вернули долг — Аня/);
   assert.doesNotMatch(preview, /Б1\./);
-  assert.ok(preview.indexOf("Общий остаток") < preview.indexOf("Общий долг"));
+  assert.ok(preview.indexOf("Общий долг") < preview.indexOf("Общий остаток"));
+  assert.ok(preview.indexOf("Всего должны мне") < preview.indexOf("Общий остаток"));
   assert.match(
     preview,
     /<b>Итог этого сообщения в EUR:<\/b>\n\n<b>Доход:<\/b>.*\n<b>Расход:<\/b>/
   );
-  assert.match(preview, /<b>Расход:<\/b>.*\n\n<b>Общий остаток:<\/b>/);
   assert.match(
     preview,
-    /<b>Общий остаток:<\/b>.*\n\n<b>Общий долг:<\/b>/
+    /<b>Расход:<\/b>.*\n\n<b>Общий долг:<\/b>/
   );
   assert.match(
     preview,
@@ -243,6 +243,10 @@ test("shows debt operations separately and reports them after total balance", ()
     /<b>Всего должны мне:<\/b> <b>2[  ]000[  ]000 VND<\/b>/
   );
   assert.match(preview, /Олег — <b>2[  ]000[  ]000 VND<\/b>/);
+  assert.match(
+    preview,
+    /Олег — <b>2[  ]000[  ]000 VND<\/b>\n\n<b>Общий остаток:<\/b>/
+  );
 });
 
 test("keeps complete clarification text when the preview fits Telegram", () => {
