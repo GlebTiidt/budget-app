@@ -26,6 +26,12 @@ A single Telegram message may yield multiple ordered transaction drafts, separat
 
 Dynamic OpenAI input context is serialized with the official TOON encoder: current text or normalized preview, the direct correction reply, controlled catalogs, timestamp, and timezone. OpenAI still returns strict JSON Schema Structured Outputs, which application code validates before Telegram sees them. Personal transfers use `account` as the source and `destinationAccount` as the receiver; they do not change the user's total balance.
 
+The first confirmed balance-only message initializes the opening anchor. A later
+entry whose date is earlier than that anchor is still stored for historical
+analytics but is outside the running-balance timeline: it does not move the
+anchor and its running-balance property is left empty. Entries dated on or after
+the anchor participate in deterministic date/order balance calculations.
+
 The OpenAI boundary keeps static developer instructions before changing TOON data, uses separate stable cache keys for parsing and revision, and records only aggregate token usage. GPT-5.6 requests use `reasoning.effort: none`, low text verbosity, and an output cap after the representative live suite showed no quality regression versus `low`. Explicit cache breakpoints prevent changing user data from becoming a paid cache write; the current reusable prefix is intentionally not padded to reach the 1,024-token cache threshold.
 
 The application aggregates totals itself, and the self-hosted Chart.js client renders the existing interactive owner report. The language model is never used for arithmetic. Every user chooses one base currency through text search in the bot. Original transaction amounts, currencies, and dates remain source facts, while preview totals and future reports are deterministically converted into that user's selected currency. Debt is the exception: positions are keyed by counterparty and original currency and are never converted merely for display or aggregation.

@@ -7,7 +7,11 @@ export type AppConfig = {
   notionApiKey: string | undefined;
   notionBudgetDatabaseId: string | undefined;
   notionBudgetDataSourceId: string | undefined;
+  notionDebtDataSourceId: string | undefined;
+  notionBalanceDataSourceId: string | undefined;
+  notionDraftDataSourceId: string | undefined;
   notionMasterSettingsDataSourceId: string | undefined;
+  failedNotionWriteDirectory: string;
   openaiApiKey: string | undefined;
   openaiModel: string;
   timezone: string;
@@ -29,9 +33,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     notionApiKey: emptyToUndefined(env.NOTION_API_KEY),
     notionBudgetDatabaseId: emptyToUndefined(env.NOTION_BUDGET_DATABASE_ID),
     notionBudgetDataSourceId: emptyToUndefined(env.NOTION_BUDGET_DATA_SOURCE_ID),
+    notionDebtDataSourceId: emptyToUndefined(env.NOTION_DEBT_DATA_SOURCE_ID),
+    notionBalanceDataSourceId: emptyToUndefined(env.NOTION_BALANCE_DATA_SOURCE_ID),
+    notionDraftDataSourceId: emptyToUndefined(env.NOTION_DRAFT_DATA_SOURCE_ID),
     notionMasterSettingsDataSourceId: emptyToUndefined(
       env.NOTION_MASTER_SETTINGS_DATA_SOURCE_ID
     ),
+    failedNotionWriteDirectory:
+      emptyToUndefined(env.FAILED_NOTION_WRITE_DIR) ??
+      (env.VERCEL ? "/tmp/budget-app-failed-notion-writes" : ".data/failed-notion-writes"),
     openaiApiKey: emptyToUndefined(env.OPENAI_API_KEY),
     openaiModel: emptyToUndefined(env.OPENAI_MODEL) ?? "gpt-5.6-luna",
     timezone: emptyToUndefined(env.APP_TIMEZONE) ?? "Asia/Ho_Chi_Minh"

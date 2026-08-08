@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { webhookCallback } from "grammy";
 import { loadConfig } from "../src/config/loadConfig.js";
-import { createTelegramPreviewBot } from "../src/integrations/telegram/telegramBot.js";
+import { createTelegramBotApp } from "../src/integrations/telegram/telegramBot.js";
 
 const config = loadConfig();
 
@@ -10,7 +10,7 @@ if (!config.telegramBotToken) {
   throw new Error("TELEGRAM_BOT_TOKEN is not configured.");
 }
 
-const bot = createTelegramPreviewBot(config);
+const bot = createTelegramBotApp(config);
 const telegramWebhook = webhookCallback(bot, "http", {
   secretToken: deriveTelegramWebhookSecret(config.telegramBotToken),
   timeoutMilliseconds: 55_000,
@@ -23,7 +23,7 @@ export default async function handler(
 ): Promise<void> {
   if (request.method === "GET") {
     response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    response.end(JSON.stringify({ ok: true, service: "telegram-preview" }));
+    response.end(JSON.stringify({ ok: true, service: "telegram" }));
     return;
   }
 

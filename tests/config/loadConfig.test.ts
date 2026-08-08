@@ -10,6 +10,10 @@ test("loadConfig applies safe integration defaults", () => {
   assert.equal(config.userDatabasePath, ".data/budget-app.sqlite");
   assert.equal(config.reportsWebAppUrl, undefined);
   assert.equal(config.masterTelegramUserId, undefined);
+  assert.equal(config.notionDebtDataSourceId, undefined);
+  assert.equal(config.notionBalanceDataSourceId, undefined);
+  assert.equal(config.notionDraftDataSourceId, undefined);
+  assert.equal(config.failedNotionWriteDirectory, ".data/failed-notion-writes");
   assert.deepEqual(config.telegramAllowedUserIds, []);
 });
 
@@ -21,6 +25,10 @@ test("loadConfig trims secrets and splits the Telegram allowlist", () => {
     REPORTS_WEB_APP_URL: " https://budget.example/reports.html ",
     MASTER_TELEGRAM_USER_ID: " 123 ",
     NOTION_MASTER_SETTINGS_DATA_SOURCE_ID: " master-settings ",
+    NOTION_DEBT_DATA_SOURCE_ID: " debts ",
+    NOTION_BALANCE_DATA_SOURCE_ID: " balances ",
+    NOTION_DRAFT_DATA_SOURCE_ID: " drafts ",
+    FAILED_NOTION_WRITE_DIR: " /safe/failures ",
     OPENAI_API_KEY: " openai-secret "
   });
 
@@ -33,6 +41,10 @@ test("loadConfig trims secrets and splits the Telegram allowlist", () => {
     config.notionMasterSettingsDataSourceId,
     "master-settings"
   );
+  assert.equal(config.notionDebtDataSourceId, "debts");
+  assert.equal(config.notionBalanceDataSourceId, "balances");
+  assert.equal(config.notionDraftDataSourceId, "drafts");
+  assert.equal(config.failedNotionWriteDirectory, "/safe/failures");
   assert.deepEqual(config.telegramAllowedUserIds, ["123", "456"]);
 });
 

@@ -11,7 +11,6 @@
     "test:parser:live": "tsx --env-file=.env.local scripts/verifyOpenAiParser.ts"
   },
   "dependencies": {
-    "@notionhq/client": "^4.0.0",
     "@toon-format/toon": "^4.1.0",
     "chart.js": "^4.5.1",
     "grammy": "^1.38.1",

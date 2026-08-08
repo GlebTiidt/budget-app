@@ -1,4 +1,5 @@
 import { Bot, InlineKeyboard } from "grammy";
+import { createMasterBudgetSaveService } from "../../app/masterBudgetSaveService.js";
 import {
   ACCOUNTS,
   CURRENCIES,
@@ -19,37 +20,63 @@ import {
 import type { AppConfig } from "../../config/loadConfig.js";
 import { createConfiguredUserSettingsRepository } from "../../storage/configuredUserSettingsRepository.js";
 import {
+  createFileNotionWriteFailureRepository,
+  type NotionWriteFailureRepository
+} from "../../storage/fileNotionWriteFailureRepository.js";
+import {
   createFrankfurterCurrencyConverter,
   type CurrencyConverter
 } from "../currency/frankfurterCurrencyConverter.js";
 import {
   createOpenAiTransactionParser,
+  normalizeParsedBudgetMessage,
   type ParsedBudgetMessageDraft,
   type ParsedDebtOperationDraft,
   type ParsedTransactionDraft,
   type TransactionTextParser
 } from "../openai/openAiTransactionParser.js";
+import { createNotionMasterBalanceRepository } from "../notion/notionMasterBalanceRepository.js";
+import { createNotionMasterDebtRepository } from "../notion/notionMasterDebtRepository.js";
+import { createNotionMasterLedgerRepository } from "../notion/notionMasterLedgerRepository.js";
+import { createNotionMasterOpeningBalanceRepository } from "../notion/notionMasterOpeningBalanceRepository.js";
+import {
+  createNotionTelegramDraftRepository,
+  type TelegramDraftRepository
+} from "../notion/notionTelegramDraftRepository.js";
 
 export type TelegramBot = {
   start(): Promise<void>;
   stop(): Promise<void>;
 };
 
-type TelegramPreviewBotOptions = {
+type TelegramBotOptions = {
   parser?: TransactionTextParser;
   currencyConverter?: CurrencyConverter;
   userSettingsRepository?: UserSettingsRepository;
+  financialSaveService?: ReturnType<typeof createMasterBudgetSaveService>;
+  telegramDraftRepository?: TelegramDraftRepository;
+  notionWriteFailureRepository?: NotionWriteFailureRepository;
+};
+
+type StoredBudgetDraftPayload = {
+  parsed: ParsedBudgetMessageDraft;
+  previewMessageIds: number[];
+  acceptBalanceMismatch: boolean;
 };
 
 type BudgetPreviewFormattingOptions = {
   baseCurrency?: SupportedCurrency;
   summary?: BudgetPreviewSummary;
   summaryUnavailable?: boolean;
+  savingEnabled?: boolean;
+  calculatedBalance?: number | null;
 };
 
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 const PREVIEW_WARNING =
   "Пока это только черновик — в Notion ничего не записано.";
+const SAVE_ENABLED_WARNING =
+  "Это черновик. После ответа «всё верно» я запишу подтверждённые данные в Notion.";
 const CURRENCY_SEARCH_PROMPT =
   "Введите код или название валюты отдельным сообщением.";
 const currencySearchReplyMarkup = {
@@ -73,9 +100,52 @@ const telegramCommands = [
   { command: "help", description: "Как пользоваться ботом" }
 ];
 
-export function createTelegramPreviewBot(
+function createConfiguredFinancialPersistence(config: AppConfig) {
+  if (
+    !config.notionApiKey ||
+    !config.notionBudgetDataSourceId ||
+    !config.notionDebtDataSourceId ||
+    !config.notionBalanceDataSourceId ||
+    !config.notionDraftDataSourceId ||
+    !config.notionMasterSettingsDataSourceId ||
+    !config.masterTelegramUserId
+  ) {
+    return null;
+  }
+  const ledgerRepository = createNotionMasterLedgerRepository({
+    apiKey: config.notionApiKey,
+    dataSourceId: config.notionBudgetDataSourceId
+  });
+  const debtRepository = createNotionMasterDebtRepository({
+    apiKey: config.notionApiKey,
+    dataSourceId: config.notionDebtDataSourceId
+  });
+  const balanceRepository = createNotionMasterBalanceRepository({
+    apiKey: config.notionApiKey,
+    dataSourceId: config.notionBalanceDataSourceId
+  });
+  return {
+    financialSaveService: createMasterBudgetSaveService({
+      currencyConverter: createFrankfurterCurrencyConverter(),
+      ledgerRepository,
+      debtRepository,
+      balanceRepository,
+      openingBalanceRepository: createNotionMasterOpeningBalanceRepository({
+        apiKey: config.notionApiKey,
+        dataSourceId: config.notionMasterSettingsDataSourceId,
+        masterTelegramUserId: config.masterTelegramUserId
+      })
+    }),
+    telegramDraftRepository: createNotionTelegramDraftRepository({
+      apiKey: config.notionApiKey,
+      dataSourceId: config.notionDraftDataSourceId
+    })
+  };
+}
+
+export function createTelegramBotApp(
   config: AppConfig,
-  options: TelegramPreviewBotOptions = {}
+  options: TelegramBotOptions = {}
 ): Bot {
   if (!config.telegramBotToken) {
     throw new Error("TELEGRAM_BOT_TOKEN is not configured.");
@@ -100,6 +170,20 @@ export function createTelegramPreviewBot(
   const userSettingsRepository =
     options.userSettingsRepository ??
     createConfiguredUserSettingsRepository(config);
+  const configuredPersistence = createConfiguredFinancialPersistence(config);
+  const financialSaveService =
+    options.financialSaveService ?? configuredPersistence?.financialSaveService;
+  const telegramDraftRepository =
+    options.telegramDraftRepository ?? configuredPersistence?.telegramDraftRepository;
+  if (Boolean(financialSaveService) !== Boolean(telegramDraftRepository)) {
+    throw new Error("Telegram financial persistence must configure both save and draft repositories.");
+  }
+  const savingEnabled = Boolean(financialSaveService && telegramDraftRepository);
+  const notionWriteFailureRepository =
+    options.notionWriteFailureRepository ??
+    createFileNotionWriteFailureRepository(config.failedNotionWriteDirectory);
+  const isSavingEnabledFor = (telegramUserId: string) =>
+    savingEnabled && telegramUserId === config.masterTelegramUserId;
   const bot = new Bot(config.telegramBotToken);
 
   bot.use(async (ctx, next) => {
@@ -133,19 +217,22 @@ export function createTelegramPreviewBot(
         ...settings,
         onboardingHelpShown: true
       });
-      await ctx.reply(formatFirstCurrencySelection(settings.baseCurrency), {
+      await ctx.reply(formatFirstCurrencySelection(settings.baseCurrency, isSavingEnabledFor(telegramUserId)), {
         parse_mode: "HTML"
       });
       return;
     }
 
-    await ctx.reply(formatWelcomeBack(settings.baseCurrency), {
+    await ctx.reply(formatWelcomeBack(settings.baseCurrency, isSavingEnabledFor(telegramUserId)), {
       parse_mode: "HTML"
     });
   });
 
   bot.command("help", async (ctx) => {
-    await ctx.reply(formatHelpMessage(), { parse_mode: "HTML" });
+    await ctx.reply(
+      formatHelpMessage(isSavingEnabledFor(requireTelegramUserId(ctx.from?.id))),
+      { parse_mode: "HTML" }
+    );
   });
 
   bot.command("settings", async (ctx) => {
@@ -193,7 +280,7 @@ export function createTelegramPreviewBot(
     await ctx.answerCallbackQuery({ text: `Основная валюта: ${currency}` });
     await ctx.editMessageText(
       isFirstSelection
-        ? formatFirstCurrencySelection(currency)
+        ? formatFirstCurrencySelection(currency, isSavingEnabledFor(telegramUserId))
         : formatCurrencySelectionUpdated(currency),
       {
         parse_mode: "HTML",
@@ -205,6 +292,7 @@ export function createTelegramPreviewBot(
   bot.on("message:text", async (ctx) => {
     try {
       const telegramUserId = requireTelegramUserId(ctx.from?.id);
+      const financialSavingEnabled = isSavingEnabledFor(telegramUserId);
       const settings =
         await userSettingsRepository.findByTelegramUserId(telegramUserId);
       const currencySearchRequested =
@@ -223,7 +311,7 @@ export function createTelegramPreviewBot(
           await userSettingsRepository.save(savedSettings);
           await ctx.reply(
             isFirstSelection
-              ? formatFirstCurrencySelection(currency)
+              ? formatFirstCurrencySelection(currency, financialSavingEnabled)
               : formatCurrencySelectionUpdated(currency),
             { parse_mode: "HTML" }
           );
@@ -250,8 +338,112 @@ export function createTelegramPreviewBot(
       const repliedPreview = getRepliedPreviewText(ctx.message.reply_to_message);
       if (repliedPreview) {
         const instruction = ctx.message.text.trim();
+        const storedDraft = financialSavingEnabled
+          ? await telegramDraftRepository!.find(
+              String(ctx.chat.id),
+              ctx.message.reply_to_message!.message_id
+            )
+          : null;
+        if (financialSavingEnabled && !storedDraft) {
+          await ctx.reply(
+            "Этот черновик уже закрыт или устарел. Пришлите финансовое сообщение ещё раз."
+          );
+          return;
+        }
+        if (storedDraft && Date.parse(storedDraft.expiresAt) <= Date.now()) {
+          await telegramDraftRepository!.trash(storedDraft.pageId);
+          await ctx.reply(
+            "Срок этого черновика истёк. Пришлите финансовое сообщение ещё раз."
+          );
+          return;
+        }
+        const storedPayload = storedDraft
+          ? deserializeStoredBudgetDraft(storedDraft.serializedDraft)
+          : null;
 
         if (isWholePreviewConfirmation(instruction)) {
+          if (financialSavingEnabled && storedDraft && storedPayload) {
+            let result;
+            try {
+              result = await financialSaveService!.save({
+                telegramUserId,
+                chatId: String(ctx.chat.id),
+                sourceMessageId: storedDraft.sourceMessageId,
+                baseCurrency: settings.baseCurrency,
+                parsed: storedPayload.parsed,
+                acceptBalanceMismatch: storedPayload.acceptBalanceMismatch
+              });
+            } catch (error: unknown) {
+              const friendlyError = userFacingSaveError(error);
+              console.error(
+                "Telegram confirmed budget save failed",
+                error instanceof Error ? error.message : "unknown error"
+              );
+              if (!friendlyError) {
+                try {
+                  const fallback = await notionWriteFailureRepository.save({
+                    telegramUserId,
+                    chatId: String(ctx.chat.id),
+                    sourceMessageId: storedDraft.sourceMessageId,
+                    failedAt: new Date().toISOString(),
+                    errorMessage:
+                      error instanceof Error ? error.message : "unknown error",
+                    normalizedDraft: storedPayload.parsed
+                  });
+                  console.error(
+                    "Normalized Notion write fallback created",
+                    JSON.stringify({ path: fallback.path })
+                  );
+                } catch (fallbackError: unknown) {
+                  console.error(
+                    "Normalized Notion write fallback failed",
+                    fallbackError instanceof Error
+                      ? fallbackError.message
+                      : "unknown error"
+                  );
+                }
+              }
+              await ctx.reply(
+                friendlyError ??
+                  "Не удалось завершить запись в Notion. Черновик и сообщения сохранены — можно ответить «всё верно» ещё раз после проверки."
+              );
+              return;
+            }
+            if (result.status === "balance_mismatch") {
+              const warning = formatBalanceMismatch(result);
+              const sent = await ctx.reply(warning, previewReplyOptions);
+              await telegramDraftRepository!.save({
+                telegramUserId,
+                chatId: String(ctx.chat.id),
+                sourceMessageId: storedDraft.sourceMessageId,
+                previewMessageId: sent.message_id,
+                serializedDraft: serializeStoredBudgetDraft({
+                  ...storedPayload,
+                  previewMessageIds: [
+                    ...new Set([
+                      ...storedPayload.previewMessageIds,
+                      sent.message_id
+                    ])
+                  ],
+                  acceptBalanceMismatch: true
+                }),
+                expiresAt: storedDraft.expiresAt
+              });
+              await telegramDraftRepository!.trash(storedDraft.pageId);
+              return;
+            }
+
+            await telegramDraftRepository!.trash(storedDraft.pageId);
+            await cleanupSavedTelegramMessages(
+              bot,
+              ctx.chat.id,
+              storedDraft.sourceMessageId,
+              storedPayload.previewMessageIds,
+              ctx.message.message_id
+            );
+            await ctx.reply(formatSaveReceipt(result));
+            return;
+          }
           await ctx.reply(
             "✅ Все пункты проверены. Это preview — в Notion ничего не записано."
           );
@@ -259,22 +451,62 @@ export function createTelegramPreviewBot(
         }
 
         if (isWholePreviewCancellation(instruction)) {
+          if (storedDraft) {
+            await telegramDraftRepository!.trash(storedDraft.pageId);
+          }
           await ctx.reply(
             "✖️ Весь черновик отменён. В Notion ничего не записано."
           );
           return;
         }
 
+        if (storedPayload?.acceptBalanceMismatch) {
+          await ctx.reply(
+            "Если операция действительно пропущена, отправьте её отдельным сообщением. Если остаток верный, ответьте «ничего не пропустил»."
+          );
+          return;
+        }
+
         try {
           const revised = await parser.revise(repliedPreview, instruction);
-          await ctx.reply(
+          const sent = await ctx.reply(
             await formatUserBudgetMessagePreview(
               revised,
               settings.baseCurrency,
-              currencyConverter
+              currencyConverter,
+              financialSavingEnabled,
+              await previewPersistentBalance(
+                financialSavingEnabled,
+                financialSaveService,
+                telegramUserId,
+                String(ctx.chat.id),
+                storedDraft?.sourceMessageId ?? ctx.message.message_id,
+                settings.baseCurrency,
+                revised
+              )
             ),
             previewReplyOptions
           );
+          if (storedDraft && storedPayload) {
+            await telegramDraftRepository!.save({
+              telegramUserId,
+              chatId: String(ctx.chat.id),
+              sourceMessageId: storedDraft.sourceMessageId,
+              previewMessageId: sent.message_id,
+              serializedDraft: serializeStoredBudgetDraft({
+                parsed: revised,
+                previewMessageIds: [
+                  ...new Set([
+                    ...storedPayload.previewMessageIds,
+                    sent.message_id
+                  ])
+                ],
+                acceptBalanceMismatch: false
+              }),
+              expiresAt: storedDraft.expiresAt
+            });
+            await telegramDraftRepository!.trash(storedDraft.pageId);
+          }
         } catch (error: unknown) {
           console.error(
             "Telegram preview revision failed",
@@ -294,10 +526,34 @@ export function createTelegramPreviewBot(
       const preview = await formatUserBudgetMessagePreview(
         parsed,
         settings.baseCurrency,
-        currencyConverter
+        currencyConverter,
+        financialSavingEnabled,
+        await previewPersistentBalance(
+          financialSavingEnabled,
+          financialSaveService,
+          telegramUserId,
+          String(ctx.chat.id),
+          ctx.message.message_id,
+          settings.baseCurrency,
+          parsed
+        )
       );
 
-      await ctx.reply(preview, previewReplyOptions);
+      const sent = await ctx.reply(preview, previewReplyOptions);
+      if (financialSavingEnabled) {
+        await telegramDraftRepository!.save({
+          telegramUserId,
+          chatId: String(ctx.chat.id),
+          sourceMessageId: ctx.message.message_id,
+          previewMessageId: sent.message_id,
+          serializedDraft: serializeStoredBudgetDraft({
+            parsed,
+            previewMessageIds: [sent.message_id],
+            acceptBalanceMismatch: false
+          }),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString()
+        });
+      }
     } catch (error: unknown) {
       console.error(
         "Telegram preview parsing failed",
@@ -314,7 +570,7 @@ export function createTelegramPreviewBot(
 
 export function createTelegramBot(config: AppConfig): TelegramBot {
   const userSettingsRepository = createConfiguredUserSettingsRepository(config);
-  const bot = createTelegramPreviewBot(config, { userSettingsRepository });
+  const bot = createTelegramBotApp(config, { userSettingsRepository });
   let stopped = false;
 
   return {
@@ -360,7 +616,7 @@ export function formatBudgetMessagePreview(
       clarificationLines.length
         ? `\n<b>Осталось уточнить:</b>\n${clarificationLines.join("\n")}`
         : " Напишите сумму, валюту и назначение точнее.",
-      `\n${PREVIEW_WARNING}`
+      `\n${previewWarning(options)}`
     ].join("");
   }
 
@@ -369,7 +625,10 @@ export function formatBudgetMessagePreview(
     return detailed;
   }
 
-  return limitTelegramMessage(buildBudgetMessagePreview(parsed, false, options));
+  return limitTelegramMessage(
+    buildBudgetMessagePreview(parsed, false, options),
+    previewWarning(options)
+  );
 }
 
 function buildBudgetMessagePreview(
@@ -420,7 +679,7 @@ function buildBudgetMessagePreview(
     sections.push(summary);
   }
 
-  sections.push(PREVIEW_WARNING);
+  sections.push(previewWarning(options));
 
   return sections.join("\n\n");
 }
@@ -448,7 +707,9 @@ function orderTransactionsForPreview(
 async function formatUserBudgetMessagePreview(
   parsed: ParsedBudgetMessageDraft,
   baseCurrency: SupportedCurrency,
-  currencyConverter: CurrencyConverter
+  currencyConverter: CurrencyConverter,
+  savingEnabled = false,
+  calculatedBalance: number | null = null
 ): Promise<string> {
   try {
     const summary = await calculateBudgetPreviewSummary(
@@ -464,7 +725,12 @@ async function formatUserBudgetMessagePreview(
           })
         ).convertedAmount
     );
-    return formatBudgetMessagePreview(parsed, { baseCurrency, summary });
+    return formatBudgetMessagePreview(parsed, {
+      baseCurrency,
+      summary,
+      savingEnabled,
+      calculatedBalance
+    });
   } catch (error: unknown) {
     console.error(
       "Telegram preview currency summary failed",
@@ -472,8 +738,37 @@ async function formatUserBudgetMessagePreview(
     );
     return formatBudgetMessagePreview(parsed, {
       baseCurrency,
-      summaryUnavailable: true
+      summaryUnavailable: true,
+      savingEnabled,
+      calculatedBalance
     });
+  }
+}
+
+async function previewPersistentBalance(
+  enabled: boolean,
+  service: ReturnType<typeof createMasterBudgetSaveService> | undefined,
+  telegramUserId: string,
+  chatId: string,
+  sourceMessageId: number,
+  baseCurrency: SupportedCurrency,
+  parsed: ParsedBudgetMessageDraft
+): Promise<number | null> {
+  if (!enabled || !service) return null;
+  try {
+    return await service.previewCurrentBalance({
+      telegramUserId,
+      chatId,
+      sourceMessageId,
+      baseCurrency,
+      parsed
+    });
+  } catch (error: unknown) {
+    console.error(
+      "Telegram persistent balance preview failed",
+      error instanceof Error ? error.message : "unknown error"
+    );
+    return null;
   }
 }
 
@@ -534,7 +829,12 @@ function formatBudgetPreviewSummary(
   }
 
   if (summary.observedBalances.length === 0) {
-    sections.push("<b>Общий остаток:</b> в этом сообщении не указан.");
+    sections.push(
+      options.calculatedBalance === null ||
+        options.calculatedBalance === undefined
+        ? "<b>Общий остаток:</b> в этом сообщении не указан."
+        : `<b>Общий остаток:</b> ${boldTelegramHtml(`${formatAmount(options.calculatedBalance)} ${summary.baseCurrency}`)}`
+    );
   } else {
     const totalObservedBalance = summary.observedBalances.reduce(
       (total, balance) => total + balance.amount,
@@ -573,7 +873,10 @@ function formatCurrencyOnboarding(): string {
   ].join("\n");
 }
 
-function formatFirstCurrencySelection(currency: SupportedCurrency): string {
+function formatFirstCurrencySelection(
+  currency: SupportedCurrency,
+  savingEnabled = false
+): string {
   return [
     `<b>Готово — основная валюта ${currency}.</b>`,
     "",
@@ -583,15 +886,18 @@ function formatFirstCurrencySelection(currency: SupportedCurrency): string {
     "Я покажу понятный черновик. Если всё совпало, ответьте «всё верно». Если нет, можно написать: «3: валюта USD», «для всех счёт Карта» или «отмени 4».",
     "Слово «тоже» повторяет последнее исправление для следующего пункта. Для исправления долга напишите, например: «долг 2: счёт Карта». Полная подсказка всегда есть в /help.",
     "",
-    PREVIEW_WARNING
+    savingEnabled ? SAVE_ENABLED_WARNING : PREVIEW_WARNING
   ].join("\n");
 }
 
-function formatWelcomeBack(currency: SupportedCurrency): string {
+function formatWelcomeBack(
+  currency: SupportedCurrency,
+  savingEnabled = false
+): string {
   return [
     "С возвращением! Напишите доходы, расходы, переводы или долговые операции обычным сообщением.",
     `Общий итог покажу в ${currency}. Изменить валюту можно в /settings.`,
-    PREVIEW_WARNING
+    savingEnabled ? SAVE_ENABLED_WARNING : PREVIEW_WARNING
   ].join("\n");
 }
 
@@ -617,7 +923,111 @@ function formatCurrencySearchNotFound(): string {
   return "Не нашёл такую валюту. Напишите отдельно код или название: например, EUR, евро, USD или донг.";
 }
 
-function formatHelpMessage(): string {
+function serializeStoredBudgetDraft(payload: StoredBudgetDraftPayload): string {
+  return JSON.stringify(payload);
+}
+
+function deserializeStoredBudgetDraft(value: string): StoredBudgetDraftPayload {
+  const parsed = JSON.parse(value) as Record<string, unknown>;
+  if (!Array.isArray(parsed.previewMessageIds)) {
+    throw new Error("Stored Telegram draft has invalid preview message IDs.");
+  }
+  const previewMessageIds = parsed.previewMessageIds.map((item) => {
+    if (!Number.isSafeInteger(item) || Number(item) < 0) {
+      throw new Error("Stored Telegram draft has an invalid preview message ID.");
+    }
+    return Number(item);
+  });
+  return {
+    parsed: normalizeParsedBudgetMessage(parsed.parsed),
+    previewMessageIds,
+    acceptBalanceMismatch: parsed.acceptBalanceMismatch === true
+  };
+}
+
+function formatBalanceMismatch(result: {
+  observedBalance: number;
+  calculatedBalance: number;
+  difference: number;
+  tolerance: number;
+}): string {
+  return [
+    "<b>Остаток не совпал с расчётом.</b>",
+    `По операциям: <b>${formatAmount(result.calculatedBalance)} EUR</b>.`,
+    `В сообщении: <b>${formatAmount(result.observedBalance)} EUR</b>.`,
+    `Разница: <b>${formatAmount(Math.abs(result.difference))} EUR</b>, допустимая погрешность: <b>${formatAmount(result.tolerance)} EUR</b>.`,
+    "Возможно, какая-то операция не внесена. Пришлите её отдельным сообщением или ответьте «ничего не пропустил», чтобы принять ваш остаток."
+  ].join("\n\n");
+}
+
+function formatSaveReceipt(result: {
+  openingBalanceCreated: boolean;
+  transactionCount: number;
+  debtOperationCount: number;
+  balanceObservationCount: number;
+  historicalOperationCount: number;
+  currentBalance: number;
+  baseCurrency: string;
+}): string {
+  const savedCount =
+    result.transactionCount +
+    result.debtOperationCount +
+    result.balanceObservationCount;
+  const lines = [
+    result.openingBalanceCreated
+      ? "✅ Стартовый остаток записан в Notion."
+      : `✅ Записано в Notion: ${savedCount} ${pluralizeOperation(savedCount)}.`,
+    `Общий остаток: ${formatAmount(result.currentBalance)} ${result.baseCurrency}.`
+  ];
+  if (result.historicalOperationCount > 0) {
+    lines.push(
+      `Исторических операций до якоря: ${result.historicalOperationCount}. Они учтены в аналитике и не изменили текущий остаток.`
+    );
+  }
+  return lines.join("\n");
+}
+
+function userFacingSaveError(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  if (
+    /^(Сначала |Реальная запись|В черновике|Дата общего остатка|Операция попадает|Этот черновик старше)/.test(
+      error.message
+    )
+  ) {
+    return `${error.message} Ничего не записано.`;
+  }
+  return null;
+}
+
+async function cleanupSavedTelegramMessages(
+  bot: Bot,
+  chatId: number,
+  sourceMessageId: number,
+  previewMessageIds: number[],
+  confirmationMessageId: number
+): Promise<void> {
+  const messageIds = [
+    sourceMessageId,
+    ...previewMessageIds,
+    confirmationMessageId
+  ];
+  for (const messageId of new Set(messageIds)) {
+    try {
+      await bot.api.deleteMessage(chatId, messageId);
+    } catch (error: unknown) {
+      console.error(
+        "Telegram post-save cleanup failed",
+        JSON.stringify({
+          chatId: String(chatId),
+          messageId,
+          error: error instanceof Error ? error.message : "unknown error"
+        })
+      );
+    }
+  }
+}
+
+function formatHelpMessage(savingEnabled = false): string {
   return [
     "<b>Как со мной работать</b>",
     "Напишите одну или несколько операций обычным сообщением. Для перевода назовите оба счёта.",
@@ -635,7 +1045,7 @@ function formatHelpMessage(): string {
     "Основная валюта ищется по коду или названию через /settings.",
     "Доходы и расходы на диаграммах открываются через /reports.",
     "",
-    PREVIEW_WARNING
+    savingEnabled ? SAVE_ENABLED_WARNING : PREVIEW_WARNING
   ].join("\n");
 }
 
@@ -927,13 +1337,13 @@ function normalizeText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function limitTelegramMessage(value: string): string {
+function limitTelegramMessage(value: string, warning = PREVIEW_WARNING): string {
   const rendered = telegramRenderedText(value);
   if (rendered.length <= TELEGRAM_MESSAGE_LIMIT) {
     return value;
   }
 
-  const suffix = `\n\n… Часть длинных деталей сокращена.\n${PREVIEW_WARNING}`;
+  const suffix = `\n\n… Часть длинных деталей сокращена.\n${warning}`;
   return `${rendered.slice(0, TELEGRAM_MESSAGE_LIMIT - suffix.length).trimEnd()}${suffix}`;
 }
 
@@ -964,9 +1374,14 @@ function getRepliedPreviewText(
   if (!replyToMessage?.from?.is_bot || !replyToMessage.text) {
     return null;
   }
-  return replyToMessage.text.includes(PREVIEW_WARNING)
+  return replyToMessage.text.includes(PREVIEW_WARNING) ||
+    replyToMessage.text.includes(SAVE_ENABLED_WARNING)
     ? replyToMessage.text
     : null;
+}
+
+function previewWarning(options: BudgetPreviewFormattingOptions): string {
+  return options.savingEnabled ? SAVE_ENABLED_WARNING : PREVIEW_WARNING;
 }
 
 function isCurrencySearchReply(
@@ -981,7 +1396,7 @@ function isCurrencySearchReply(
 }
 
 function isWholePreviewConfirmation(value: string): boolean {
-  return /^(вс[её]\s+верно|верно|подтверждаю|подтвердить)[.!]?$/i.test(
+  return /^(вс[её]\s+верно|верно|подтверждаю|подтвердить|ничего\s+не\s+(?:пропустил|забыл))[.!]?$/i.test(
     value.trim()
   );
 }

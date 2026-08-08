@@ -39,13 +39,14 @@ This is the living rules file for the budget app. We update it when decisions be
 - Currency conversion and report totals are calculated by application code, not by the language model.
 - Every user has exactly one selected base/reporting currency from the supported currency catalog. The user must choose it during onboarding and may change it later in Telegram settings.
 - The opening balance is a controlled setting in the user's base currency with an effective date; it is not recorded as a fake income transaction.
+- A confirmed balance-only message may initialize the opening balance when no anchor exists. Transactions dated before the anchor remain valid historical records for income, expense, category, and debt analytics, but they never change the anchored current balance. Because no earlier balance is known, their running-balance field remains empty rather than showing an invented value. Transactions dated on or after the anchor date participate in the running balance.
 - The personal MVP tracks one total balance in the user's base currency rather than separate calculated per-account balances.
 - Once an opening anchor and confirmed history exist, the application always calculates the current total balance itself. A preview without a user-stated balance shows the calculated balance after applying every complete operation in deterministic order.
 - Transfers between supported personal accounts are first-class transactions. A transfer stores both its source account and destination account and requires confirmation before saving.
 - Every confirmed transaction must eventually store the base currency used and the running balance immediately after that operation. The owner's existing fixed-EUR Notion schema remains unchanged until its generic base-currency migration is implemented and verified.
 - For the total balance, income adds the amount converted into the user's base currency, expense subtracts it, and transfers between personal accounts do not change it. Borrowing and collected repayments add available money; repayment of the user's debt and lending subtract it, while all four remain excluded from income and expense totals.
 - For transaction drafts, `account` is the payment account for an expense, the receiving account for income, and the source account for a transfer; `destinationAccount` is required only for a transfer.
-- Backdated inserts, corrections, and deletions require recalculation of every later running balance in deterministic date/order sequence.
+- Backdated inserts, corrections, and deletions on or after the opening anchor require recalculation of every later running balance in deterministic date/order sequence. Rows before the anchor are analytics-only and do not trigger current-balance recalculation.
 - Currency conversion uses Frankfurter v2 without an API key and targets the user's selected base currency. A same-currency conversion uses rate `1` without a network request.
 - Request the rate for the transaction date. Accept the API's same-day rate or the latest returned prior rate, but never a rate after the transaction date.
 - Send only the current transaction text and controlled category/account lists to the language model, not the complete budget history.
@@ -95,15 +96,16 @@ This is the living rules file for the budget app. We update it when decisions be
 - In the Telegram preview, group ordinary transactions as income, then expense, then personal transfer. Preserve the original relative order inside each group, and use the displayed order consistently for item numbers and clarification references.
 - Separate the converted preview summary into readable paragraphs for income and expense, what the user owes, what others owe the user, and the observed total balance. Keep the heading, labels, and counterparty rows inside their logical block, and show `Общий остаток` as the final summary paragraph.
 - Collect missing amount, currency, category, account, and other ambiguities into one numbered clarification block instead of sending separate prompts.
-- Never truncate or replace any preview, clarification, comment, or ambiguity with an ellipsis when the complete message fits Telegram's 4,096-character limit. Compact content only after the complete preview actually exceeds that hard limit, while preserving every numbered item, every missing-field request, the reply instructions, and the no-write warning.
+- Never truncate or replace any preview, clarification, comment, or ambiguity with an ellipsis when the complete message fits Telegram's 4,096-character limit. Compact content only after the complete preview actually exceeds that hard limit, while preserving every numbered item, every missing-field request, the reply instructions, and the confirmation warning.
 - Destructive actions must require explicit confirmation.
-- Chat cleanup happens only after every requested financial write succeeds idempotently. Then delete the user's source financial message and the bot's temporary preview/correction messages, but retain the final receipt. Never delete anything while a save is pending, failed, or only simulated in preview mode.
+- Chat cleanup happens only after every requested financial write succeeds idempotently. Then delete the user's source financial message and the bot's temporary preview/correction messages, but retain the final receipt. Never delete anything while a save is pending or failed.
 
-### Parser Preview Mode
+### Confirmed Save Mode
 
-- The deployed preview is owner-only and exists to test Telegram delivery, language, parsing quality, and draft controls before enabling financial writes.
-- Every preview draft and action response must state that nothing was written to Notion.
-- Reply actions such as `всё верно`, field corrections, and `отмени 4` exercise preview UX only. A preview may call the read-only currency-rate service and may persist user settings, but it must not write a financial transaction or balance observation.
+- Only the explicit master Telegram ID may confirm writes into the owner's Notion workspace. Other allowlisted users remain outside this adapter and use isolated storage when that flow is enabled.
+- Every normalized preview is persisted without the raw Telegram text and expires after 24 hours. Corrections create the replacement draft before the previous draft is trashed.
+- `всё верно` performs deterministic conversion and idempotent Notion writes; cancellation trashes only the pending draft.
+- If a Notion save fails, keep Telegram messages and the persistent Notion draft. Also write the normalized draft to the configured private failure directory and log the technical error without raw Telegram text. The Vercel `/tmp` copy is best-effort and ephemeral; persistent recovery relies on the Notion draft until a dedicated volume is deployed.
 - Committed tests and fixtures must use synthetic examples and must never contain credentials, API keys, personal identifiers, or real financial history.
 - Application logs must not contain raw Telegram transaction text. An exact user phrase may be used transiently for debugging only and must be removed after a synthetic regression case reproduces it.
 - Do not mark the full Telegram transaction flow complete until one real Telegram message passes confirmation, conversion, an idempotent Notion write, and a verified receipt.

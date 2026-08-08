@@ -7,13 +7,17 @@ import type {
 } from "../../../src/budget/userSettings.js";
 import type { CurrencyConverter } from "../../../src/integrations/currency/frankfurterCurrencyConverter.js";
 import type {
+  StoredTelegramDraft,
+  TelegramDraftRepository
+} from "../../../src/integrations/notion/notionTelegramDraftRepository.js";
+import type {
   ParsedBudgetMessageDraft,
   ParsedDebtOperationDraft,
   ParsedTransactionDraft,
   TransactionTextParser
 } from "../../../src/integrations/openai/openAiTransactionParser.js";
 import {
-  createTelegramPreviewBot,
+  createTelegramBotApp,
   formatBudgetMessagePreview,
   isTelegramUserAllowed
 } from "../../../src/integrations/telegram/telegramBot.js";
@@ -361,7 +365,7 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
     TELEGRAM_ALLOWED_USER_IDS: "100001",
     REPORTS_WEB_APP_URL: "https://budget.example/reports.html"
   });
-  const bot = createTelegramPreviewBot(config, {
+  const bot = createTelegramBotApp(config, {
     parser,
     currencyConverter: passthroughCurrencyConverter,
     userSettingsRepository: createUserSettingsRepository()
@@ -596,7 +600,7 @@ test("Telegram requires onboarding currency and keeps it in user settings", asyn
     TELEGRAM_ALLOWED_USER_IDS: "100001",
     REPORTS_WEB_APP_URL: "https://budget.example/reports.html"
   });
-  const bot = createTelegramPreviewBot(config, {
+  const bot = createTelegramBotApp(config, {
     parser,
     currencyConverter: passthroughCurrencyConverter,
     userSettingsRepository
@@ -859,6 +863,121 @@ test("Telegram requires onboarding currency and keeps it in user settings", asyn
     /https:\/\/budget\.example\/reports\.html/
   );
 });
+
+test("Telegram persists a normalized draft and saves it once on confirmation", async () => {
+  let stored: StoredTelegramDraft | null = null;
+  const trashed: string[] = [];
+  const deleted: number[] = [];
+  const saveInputs: unknown[] = [];
+  const draftRepository: TelegramDraftRepository = {
+    async save(draft) {
+      stored = { ...draft, pageId: `draft-${draft.previewMessageId}` };
+      return stored;
+    },
+    async find(chatId, previewMessageId) {
+      return stored?.chatId === chatId && stored.previewMessageId === previewMessageId
+        ? stored
+        : null;
+    },
+    async trash(pageId) { trashed.push(pageId); }
+  };
+  const parsed: ParsedBudgetMessageDraft = {
+    transactions: [], debtOperations: [],
+    balanceObservations: [{ amount: 132, currency: "EUR", occurredOn: "2026-08-08", account: null, confidence: 1, ambiguities: [] }],
+    ambiguities: []
+  };
+  const parser: TransactionTextParser = {
+    async parse() { return parsed; },
+    async revise() { throw new Error("not used"); }
+  };
+  const bot = createTelegramBotApp(
+    loadConfig({ TELEGRAM_BOT_TOKEN: "123456:test-token", TELEGRAM_ALLOWED_USER_IDS: "100001" }),
+    {
+      parser, currencyConverter: passthroughCurrencyConverter,
+      userSettingsRepository: createUserSettingsRepository(),
+      telegramDraftRepository: draftRepository,
+      financialSaveService: {
+        async previewCurrentBalance() { return null; },
+        async save(input) {
+          saveInputs.push(input);
+          return { status: "saved" as const, openingBalanceCreated: true, transactionCount: 0, debtOperationCount: 0, balanceObservationCount: 1, historicalOperationCount: 0, currentBalance: 132, baseCurrency: "EUR" as const };
+        }
+      }
+    }
+  );
+  const sent: Array<Record<string, unknown>> = [];
+  bot.api.config.use((async (_previous: unknown, method: string, payload: Record<string, unknown>) => {
+    if (method === "getMe") return { ok: true, result: { id: 123456, is_bot: true, first_name: "Bot", username: "bot" } };
+    if (method === "sendChatAction") return { ok: true, result: true };
+    if (method === "deleteMessage") { deleted.push(Number(payload.message_id)); return { ok: true, result: true }; }
+    if (method === "sendMessage") {
+      sent.push(payload);
+      return { ok: true, result: { message_id: sent.length, date: 1, chat: { id: 100001, type: "private", first_name: "Owner" }, text: payload.text } };
+    }
+    throw new Error(`Unexpected Telegram method: ${method}`);
+  }) as Parameters<typeof bot.api.config.use>[0]);
+  await bot.init();
+  await bot.handleUpdate({ update_id: 100, message: { message_id: 10, date: 1, chat: { id: 100001, type: "private", first_name: "Owner" }, from: { id: 100001, is_bot: false, first_name: "Owner" }, text: "Остаток 132 EUR" } });
+  assert.match(String(sent[0]?.text), /запишу подтверждённые данные в Notion/);
+  assert.ok(stored);
+  const persistedDraft = stored as StoredTelegramDraft;
+  assert.doesNotMatch(persistedDraft.serializedDraft, /Остаток 132 EUR/);
+
+  await bot.handleUpdate({ update_id: 101, message: { message_id: 11, date: 2, chat: { id: 100001, type: "private", first_name: "Owner" }, from: { id: 100001, is_bot: false, first_name: "Owner" }, text: "всё верно", reply_to_message: { message_id: 1, date: 1, chat: { id: 100001, type: "private", first_name: "Owner" }, from: { id: 123456, is_bot: true, first_name: "Bot" }, text: String(sent[0]?.text), reply_to_message: undefined } } });
+  assert.equal(saveInputs.length, 1);
+  assert.deepEqual(deleted, [10, 1, 11]);
+  assert.deepEqual(trashed, ["draft-1"]);
+  assert.match(String(sent[1]?.text), /Стартовый остаток записан/);
+});
+
+test("Telegram writes a normalized fallback and keeps messages when Notion fails", async () => {
+  const parsed = balanceOnlyDraftForTelegram();
+  const stored: StoredTelegramDraft = {
+    pageId: "draft-page", telegramUserId: "100001", chatId: "100001",
+    sourceMessageId: 10, previewMessageId: 1,
+    serializedDraft: JSON.stringify({ parsed, previewMessageIds: [1], acceptBalanceMismatch: false }),
+    expiresAt: "2099-01-01T00:00:00.000Z"
+  };
+  let fallback: unknown = null;
+  const deleted: number[] = [];
+  const sent: Array<Record<string, unknown>> = [];
+  const bot = createTelegramBotApp(
+    loadConfig({ TELEGRAM_BOT_TOKEN: "123456:test-token", TELEGRAM_ALLOWED_USER_IDS: "100001" }),
+    {
+      parser: { async parse() { return parsed; }, async revise() { return parsed; } },
+      currencyConverter: passthroughCurrencyConverter,
+      userSettingsRepository: createUserSettingsRepository(),
+      telegramDraftRepository: {
+        async save(value) { return { ...value, pageId: "new-draft" }; },
+        async find() { return stored; }, async trash() {}
+      },
+      financialSaveService: {
+        async previewCurrentBalance() { return null; },
+        async save() { throw new Error("Notion transaction write failed (503): unavailable"); }
+      },
+      notionWriteFailureRepository: {
+        async save(value) { fallback = value; return { path: "/tmp/failure.json" }; }
+      }
+    }
+  );
+  bot.api.config.use((async (_previous: unknown, method: string, payload: Record<string, unknown>) => {
+    if (method === "getMe") return { ok: true, result: { id: 123456, is_bot: true, first_name: "Bot", username: "bot" } };
+    if (method === "sendChatAction") return { ok: true, result: true };
+    if (method === "deleteMessage") { deleted.push(Number(payload.message_id)); return { ok: true, result: true }; }
+    if (method === "sendMessage") { sent.push(payload); return { ok: true, result: { message_id: 2, date: 2, chat: { id: 100001, type: "private", first_name: "Owner" }, text: payload.text } }; }
+    throw new Error(`Unexpected Telegram method: ${method}`);
+  }) as Parameters<typeof bot.api.config.use>[0]);
+  await bot.init();
+  await bot.handleUpdate({ update_id: 102, message: { message_id: 11, date: 2, chat: { id: 100001, type: "private", first_name: "Owner" }, from: { id: 100001, is_bot: false, first_name: "Owner" }, text: "всё верно", reply_to_message: { message_id: 1, date: 1, chat: { id: 100001, type: "private", first_name: "Owner" }, from: { id: 123456, is_bot: true, first_name: "Bot" }, text: "Это черновик. После ответа «всё верно» я запишу подтверждённые данные в Notion.", reply_to_message: undefined } } });
+  assert.ok(fallback);
+  assert.deepEqual(deleted, []);
+  assert.match(String(sent[0]?.text), /Черновик и сообщения сохранены/);
+  assert.deepEqual((fallback as { normalizedDraft: unknown }).normalizedDraft, parsed);
+});
+
+function balanceOnlyDraftForTelegram(): ParsedBudgetMessageDraft {
+  return { transactions: [], debtOperations: [], balanceObservations: [{ amount: 132, currency: "EUR", occurredOn: "2026-08-08", account: null, confidence: 1, ambiguities: [] }], ambiguities: [] };
+}
 
 function createDraft(
   direction: "expense" | "income" | "transfer"

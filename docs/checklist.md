@@ -73,8 +73,8 @@ Exit condition: currencies, categories, accounts, opening-balance policy, transf
 - [x] Add `NOTION_API_KEY`, `NOTION_BUDGET_DATABASE_ID`, and `NOTION_BUDGET_DATA_SOURCE_ID` to Vercel Production and Development.
 - [x] Synchronize Notion categories `Фриланс`, `Работа`, and `Спорт`; keep fuel and bike rental under `Транспорт`.
 - [x] Synchronize the Notion account option `Crypto` while preserving every existing `Счёт` option.
-- [ ] Implement the Notion transaction mapper and repository.
-- [ ] Verify an idempotent test write and delete the test row manually.
+- [x] Implement the Notion transaction mapper and repository.
+- [x] Verify an idempotent synthetic write: the stable source ID resolved to exactly one row on repeat, then the synthetic page was moved to Notion trash.
 
 Exit condition: one verified transaction can be written exactly once through the repository with its resulting balance in the recorded base currency.
 
@@ -109,7 +109,7 @@ Exit condition: one verified transaction can be written exactly once through the
 - [x] Accept ordinary reply text for whole-preview confirmation, field corrections, and numbered cancellation; return a revised preview without writing to Notion.
 - [x] Apply sequential `тоже` replies through visible items, prefer a supported final destination account, and avoid duplicate missing-field questions.
 - [x] Recognize a correction that describes `Crypto → Вьетнамский счёт` as a separate personal transfer instead of overwriting the income account.
-- [ ] Implement persistent Confirm, Correct, and Cancel state for the real save flow; preview replies remain non-writing UX checks.
+- [x] Implement persistent Confirm, Correct, and Cancel state for the real save flow using normalized Notion drafts without raw Telegram text.
 - [ ] Implement a proposed-new-category state with Create, Use `Другое`, and Cancel actions.
 - [ ] Append a confirmed category to Notion while preserving all existing select options and rejecting duplicates.
 
@@ -141,17 +141,17 @@ Exit condition: tested conversions are deterministic and retain all audit fields
 - [x] Implement `/start` and `/help`.
 - [x] Parse an informal message through OpenAI.
 - [x] Show the normalized draft and accept confirmation, corrections, or cancellation through an ordinary text reply.
-- [ ] Convert the confirmed amount to the user's selected base currency.
-- [ ] Calculate and show the running balance in the user's base currency after every confirmed operation: income, borrowing, and collected repayments add; expense, repayment of borrowed money, and lending subtract; personal transfers do not change the total.
+- [x] Convert confirmed owner operations to EUR using their transaction dates; fail closed while the owner ledger still has fixed EUR fields.
+- [x] Calculate and show the anchored running balance after every complete current operation: income, borrowing, and collected repayments add; expense, repayment of borrowed money, and lending subtract; personal transfers do not change the total. Pre-anchor history remains analytics-only with an empty running balance.
 - [ ] Recalculate the affected running balances after a backdated transaction is inserted, corrected, or deleted.
 - [ ] Save the confirmed transaction to Notion.
-- [ ] Prevent duplicate writes using the Telegram message ID.
+- [x] Prevent duplicate writes using stable IDs derived from Telegram chat ID, source message ID, operation kind, and item index.
 - [ ] Save confirmed debt actions idempotently and recalculate later outstanding positions for the affected counterparty and original currency after inserts, corrections, or deletions.
 - [ ] Return a concise receipt containing original amount, converted base-currency amount, remaining balance, category, account route when applicable, and date.
-- [ ] Accept and persist a confirmed user-stated balance as an authoritative reconciliation observation, never as income or expense; compare its converted base-currency value with the calculated balance.
-- [ ] If an observation matches within the configured FX-aware tolerance, accept it as the new balance anchor; otherwise explain the difference conversationally and collect one or more post-factum drafts before replacing the anchor.
+- [x] Accept a confirmed user-stated balance as an authoritative reconciliation observation, never as income or expense; the first balance-only message initializes the opening anchor after the production smoke test.
+- [x] Compare an observation with the calculated balance using the configured FX-aware tolerance; within tolerance accept it, otherwise explain the difference and require explicit confirmation before replacing the anchor.
 - [ ] Require independent confirmation for every recalled expense, show the remaining unexplained difference, and allow the user to stop without inventing an adjustment.
-- [ ] After the full idempotent save succeeds, delete the user's source financial message and the bot's temporary preview/correction messages while retaining the final receipt; never delete anything on a failed write or in preview mode.
+- [x] After the full idempotent save succeeds, delete the user's source financial message and temporary preview/correction messages while retaining the final receipt; on failure keep messages, retain the Notion draft, and write a normalized private filesystem fallback.
 
 Exit condition: one real Telegram message completes the full confirmed path into Notion exactly once.
 
@@ -180,7 +180,7 @@ Exit condition: the bot returns verified monthly totals and a chart whose segmen
 - [ ] Add running-balance tests for income, expense, transfer, same-day ordering, and backdated corrections.
 - [ ] Add the remaining integration tests with mocked OpenAI, Frankfurter, Notion, and Telegram responses.
 - [x] Run `npm run typecheck` after the currency, settings, and master-report implementation.
-- [x] Run `npm test`; all 52 current local tests pass after adding bot currency search, debt parsing/summary coverage, and removal of the redundant `Б1` row.
+- [x] Run `npm test`; all 71 current local tests pass across anchored balance calculation, idempotent Notion repositories, persistent Telegram confirmation, cleanup, and normalized write-failure fallback.
 - [x] Add the Telegram webhook HTTP endpoint for Vercel and register the production URL with Telegram.
 - [x] Deploy the owner-only parser preview to Vercel Production and register its Telegram webhook.
 - [x] Deploy the owner-only Chart.js Mini App and report API to the personal Vercel surface; verify the static page returns `200`, an unsigned API request returns `401`, and a signed master request returns a valid empty August 2026 report.
@@ -240,26 +240,28 @@ Detailed future category and idea-inbox UX is captured in [`docs/ideas-checklist
 
 Exit condition: an invited user has an isolated budget and custom categories without access to the owner's Notion or any other user's data.
 
-## Current Gate — Production Telegram Preview
+## Current Gate — Confirmed Notion Save
 
-The multi-operation preview is deployed and its health endpoint and webhook are verified. This owner smoke test validates user-facing behavior only and must not create or update a Notion transaction.
+The owner-only save flow is locally verified and the live Notion transaction contract passed one synthetic idempotency check. Production remains incomplete until the deployment and first real balance-only confirmation pass.
 
 ### Owner Smoke Test
 
-- [ ] Open [`@budgetgleb_bot`](https://t.me/budgetgleb_bot) and send `/start`; verify the bot explains that it is a preview and will not write to Notion.
+- [ ] Open [`@budgetgleb_bot`](https://t.me/budgetgleb_bot) and send `/start`; verify the bot explains that confirmation writes to Notion.
 - [ ] Open `/reports` from Telegram; verify the selected month shows only the master's Notion data and that bar, line, and doughnut choices animate without exposing the page outside the owner allowlist.
-- [ ] Send `/help`; verify it returns concise examples and repeats the no-write warning.
+- [ ] Send `/help`; verify it returns concise examples and explains confirmed saving.
 - [ ] Send `Сегодня заплатил 120к донгов за кофе по QR`; expect an expense in `VND`, category `Кофешоп`, account `Вьетнамский счёт`, and today's local date.
 - [ ] Send an intentionally incomplete example such as `Потратил 50`; expect a clarification request or an explicit low-confidence draft with ambiguities rather than silent guessing.
-- [ ] Send a synthetic message containing one employment income, four expenses in mixed currencies, and a stated remaining balance; expect one bot response containing five numbered transaction drafts and one separate balance observation.
+- [ ] As the first real financial message, send only the exact current total balance and date; confirm it and verify one settings anchor plus one balance observation are created idempotently.
+- [ ] Verify the source balance message and temporary preview disappear only after saving, while the final receipt remains.
+- [ ] Send a synthetic message containing one employment income, four expenses in mixed currencies, debts, and a stated remaining balance; expect independently numbered operation/debt sections and one final balance.
 - [ ] Verify that the same response shows the balance only once as `Общий остаток`, with no separate `Б1` line and no account name in the summary label.
 - [ ] Verify that missing accounts, currencies, categories, or amounts are listed together with the affected transaction numbers.
 - [ ] Reply `для всех счёт Вьетнамский счёт`; expect one revised preview with that account applied to every compatible numbered item.
 - [ ] Reply with a targeted correction such as `3: валюта USD`; expect unchanged items to be preserved and only item 3 updated.
 - [ ] Reply with sequential lines ending in `тоже`; expect the last explicit correction to continue through each next visible ordinary or debt item, using `долг N` when directly targeting the debt section.
 - [ ] Reply `отмени 4`; expect only transaction 4 to disappear from the revised preview.
-- [ ] Reply `всё верно`; verify the bot says all items were checked and nothing was written to Notion.
-- [ ] Open the Notion `Транзакции` database and verify that the preview test created no new transaction rows.
+- [ ] Reply `всё верно`; verify ordinary transactions, debts, and the balance observation are written once and the receipt shows the resulting balance.
+- [ ] Add one transaction dated before the opening anchor; verify it appears in analytics with empty `Остаток EUR` and does not change the current balance.
 - [ ] Repeat the complex case with `Аванс изначально Crypto, потом перевод всей суммы на вьет счёт`; expect income on `Crypto`, a separate `Crypto → Вьетнамский счёт` transfer, all later expenses and the balance observation on `Вьетнамский счёт`, and no prematurely truncated clarification.
 - [ ] Search the onboarding currency with `дол`; expect `USD` and `AUD` choices, then search `/settings` with `евро` and expect `EUR` without calling the transaction parser.
 - [ ] Send one synthetic message that borrows and repays USD with one person and lends/collects another currency with another person; expect four independently numbered debt items without a `Д` prefix, no ordinary income/expense classification, and original-currency totals plus per-person breakdown before the final `Общий остаток`.
@@ -269,15 +271,15 @@ The multi-operation preview is deployed and its health endpoint and webhook are 
 
 - [ ] Inspect Vercel runtime logs for webhook/OpenAI errors and confirm they contain no raw transaction text or secrets.
 - [ ] Fix observed parsing or UX issues, rerun local verification, redeploy, and repeat only the failed smoke-test cases.
-- [ ] Mark user-facing preview behavior verified only after the real Telegram smoke test passes.
+- [ ] Mark confirmed save behavior verified only after the real Telegram smoke test passes.
 
 ## Current Next Actions
 
-1. Complete the remaining owner interaction smoke tests for `/start`, `/settings`, `/reports`, and message summaries inside Telegram without writing financial data to Notion.
-2. Provision the dedicated server and persistent SQLite volume, configure `USER_DATABASE_PATH`, and verify backup plus restore before relying on saved non-master profiles.
-3. Provide an exact opening balance anchor and effective date in the selected base currency.
-4. Migrate the owner's fixed-EUR Notion fields to a generic verified base-currency representation before enabling non-EUR confirmed writes.
-5. Implement the first verified repository write.
-6. Confirm OpenAI API billing safeguards before enabling the save flow.
-7. Add persistent debt storage and an accumulated bot debt report before treating preview debt deltas as current outstanding balances.
-8. Add post-save Telegram cleanup only after the idempotent write and retained final receipt are verified.
+1. Commit, push, and deploy the owner-only confirmed Notion save flow.
+2. Confirm the first exact balance-only Telegram message as the opening anchor and verify the retained receipt plus Notion rows.
+3. Run the mixed income, expense, debt, balance-mismatch, and pre-anchor-history production smoke cases.
+4. Inspect Vercel logs for save/cleanup failures and confirm they contain no raw budget text or secrets.
+5. Complete a concise receipt with per-operation original/converted details and implement recalculation for backdated rows on or after the active anchor.
+6. Confirm OpenAI API billing safeguards.
+7. Provision the dedicated server and persistent SQLite/failure directories with backup and restore before relying on non-master profiles.
+8. Migrate the owner's fixed-EUR fields before enabling a non-EUR owner base currency, and add accumulated historical debt reports.
