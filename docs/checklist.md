@@ -71,6 +71,7 @@ Exit condition: currencies, categories, accounts, opening-balance policy, transf
 - [x] Share the `Личный бюджет` page and nested `Транзакции` database with that integration; verify read access.
 - [x] Add local `NOTION_API_KEY`, `NOTION_BUDGET_DATABASE_ID`, and `NOTION_BUDGET_DATA_SOURCE_ID` values and verify them.
 - [x] Add `NOTION_API_KEY`, `NOTION_BUDGET_DATABASE_ID`, and `NOTION_BUDGET_DATA_SOURCE_ID` to Vercel Production and Development.
+- [x] Add the verified debt, balance-observation, and Telegram-draft Notion data source IDs to Vercel Production and Development.
 - [x] Synchronize Notion categories `Фриланс`, `Работа`, and `Спорт`; keep fuel and bike rental under `Транспорт`.
 - [x] Synchronize the Notion account option `Crypto` while preserving every existing `Счёт` option.
 - [x] Implement the Notion transaction mapper and repository.
@@ -183,6 +184,7 @@ Exit condition: the bot returns verified monthly totals and a chart whose segmen
 - [x] Run `npm test`; all 71 current local tests pass across anchored balance calculation, idempotent Notion repositories, persistent Telegram confirmation, cleanup, and normalized write-failure fallback.
 - [x] Add the Telegram webhook HTTP endpoint for Vercel and register the production URL with Telegram.
 - [x] Deploy the owner-only parser preview to Vercel Production and register its Telegram webhook.
+- [x] Deploy commit `c4322c3` with owner-only confirmed Notion writes; deployment `dpl_6s23DRDPc4gEd5wVRD4dvQQTyLtd` is `Ready`, the production alias reports `service: telegram`, and Telegram reports zero pending updates and no webhook error.
 - [x] Deploy the owner-only Chart.js Mini App and report API to the personal Vercel surface; verify the static page returns `200`, an unsigned API request returns `401`, and a signed master request returns a valid empty August 2026 report.
 - [x] Register and verify the production Telegram menu commands `/start`, `/settings`, `/reports`, and `/help`; the webhook has no pending updates or reported error.
 - [ ] Perform an end-to-end production smoke test.
@@ -242,7 +244,7 @@ Exit condition: an invited user has an isolated budget and custom categories wit
 
 ## Current Gate — Confirmed Notion Save
 
-The owner-only save flow is locally verified and the live Notion transaction contract passed one synthetic idempotency check. Production remains incomplete until the deployment and first real balance-only confirmation pass.
+The owner-only save flow is deployed, locally verified, and the live Notion transaction contract passed one synthetic idempotency check. Production remains incomplete until the first real balance-only confirmation passes.
 
 ### Owner Smoke Test
 
@@ -275,11 +277,10 @@ The owner-only save flow is locally verified and the live Notion transaction con
 
 ## Current Next Actions
 
-1. Commit, push, and deploy the owner-only confirmed Notion save flow.
-2. Confirm the first exact balance-only Telegram message as the opening anchor and verify the retained receipt plus Notion rows.
-3. Run the mixed income, expense, debt, balance-mismatch, and pre-anchor-history production smoke cases.
-4. Inspect Vercel logs for save/cleanup failures and confirm they contain no raw budget text or secrets.
-5. Complete a concise receipt with per-operation original/converted details and implement recalculation for backdated rows on or after the active anchor.
-6. Confirm OpenAI API billing safeguards.
-7. Provision the dedicated server and persistent SQLite/failure directories with backup and restore before relying on non-master profiles.
-8. Migrate the owner's fixed-EUR fields before enabling a non-EUR owner base currency, and add accumulated historical debt reports.
+1. Confirm the first exact balance-only Telegram message as the opening anchor and verify the retained receipt plus Notion rows.
+2. Run the mixed income, expense, debt, balance-mismatch, and pre-anchor-history production smoke cases.
+3. Inspect Vercel logs for save/cleanup failures and confirm they contain no raw budget text or secrets.
+4. Complete a concise receipt with per-operation original/converted details and implement recalculation for backdated rows on or after the active anchor.
+5. Confirm OpenAI API billing safeguards.
+6. Provision the dedicated server and persistent SQLite/failure directories with backup and restore before relying on non-master profiles.
+7. Migrate the owner's fixed-EUR fields before enabling a non-EUR owner base currency, and add accumulated historical debt reports.
