@@ -13,6 +13,9 @@ test("writes an accepted balance observation idempotently", async () => {
   assert.deepEqual(await repository.saveObservation(observation()), { pageId: "balance-page", created: true });
   assert.deepEqual(calls[1].body.properties["Статус"], { select: { name: "Принято пользователем" } });
   assert.deepEqual(calls[1].body.properties["Порядок"], { number: 2001 });
+  assert.deepEqual(calls[1].body.properties["Основная валюта"], { select: { name: "USD" } });
+  assert.deepEqual(calls[1].body.properties["Итоговый остаток"], { number: 132 });
+  assert.deepEqual(calls[1].body.properties["Якорь"], { checkbox: true });
 });
 
 test("reads the latest accepted balance anchor", async () => {
@@ -20,21 +23,29 @@ test("reads the latest accepted balance anchor", async () => {
     apiKey: "secret", dataSourceId: "balances", fetchImpl: async (_input, init) => {
       const body = JSON.parse(String(init?.body));
       assert.equal(body.sorts[0].property, "Порядок");
+      assert.deepEqual(body.filter, { and: [
+        { property: "Якорь", checkbox: { equals: true } },
+        { or: [
+          { property: "Статус", select: { equals: "Совпадает" } },
+          { property: "Статус", select: { equals: "Принято пользователем" } }
+        ] }
+      ] });
       return Response.json({ results: [{ id: "anchor", properties: {
-        "Порядок": { number: 2001 }, "Дата": { date: { start: "2026-08-08" } }, "Сумма EUR": { number: 132 },
+        "Порядок": { number: 2001 }, "Дата": { date: { start: "2026-08-08" } }, "Итоговый остаток": { number: 132 },
+        "Основная валюта": { select: { name: "USD" } },
         "Telegram ID": { rich_text: [{ plain_text: "10:20:balance:1" }] }
       } }] });
     }
   });
-  assert.deepEqual(await repository.findLatestAccepted(), { pageId: "anchor", sourceId: "10:20:balance:1", order: 2001, occurredOn: "2026-08-08", balance: 132 });
+  assert.deepEqual(await repository.findLatestAccepted(), { pageId: "anchor", sourceId: "10:20:balance:1", order: 2001, occurredOn: "2026-08-08", balance: 132, baseCurrency: "USD" });
 });
 
 function observation(): MasterBalanceObservationWrite {
   return {
     sourceId: "10:20:balance:1", telegramUserId: "10", order: 2001,
-    occurredOn: "2026-08-08", originalAmount: 132, originalCurrency: "EUR",
-    conversionRate: 1, baseAmount: 132, baseCurrency: "EUR", account: null,
-    calculatedBalance: 132, difference: 0, tolerance: 5,
+    occurredOn: "2026-08-08", originalAmount: 132, originalCurrency: "USD",
+    conversionRate: 1, baseAmount: 132, baseCurrency: "USD", account: null,
+    calculatedBalance: 132, acceptedBalance: 132, isAnchor: true, difference: 0, tolerance: 5,
     status: "Принято пользователем", comment: "Стартовый остаток"
   };
 }

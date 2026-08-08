@@ -5,7 +5,7 @@ import {
   type MasterLedgerTransactionWrite
 } from "../../../src/integrations/notion/notionMasterLedgerRepository.js";
 
-test("writes a complete EUR ledger row after an idempotency query", async () => {
+test("writes a complete base-currency ledger row after an idempotency query", async () => {
   const requests: Array<{ url: string; method: string; body: unknown }> = [];
   const repository = createNotionMasterLedgerRepository({
     apiKey: "notion-secret",
@@ -57,7 +57,8 @@ test("writes a complete EUR ledger row after an idempotency query", async () => 
     ]
   });
   assert.deepEqual(createBody.properties["Порядок"], { number: 7701 });
-  assert.deepEqual(createBody.properties["Остаток EUR"], { number: 950.5 });
+  assert.deepEqual(createBody.properties["Остаток в основной валюте"], { number: 950.5 });
+  assert.deepEqual(createBody.properties["Основная валюта"], { select: { name: "USD" } });
 });
 
 test("returns the existing page without creating a duplicate", async () => {
@@ -78,21 +79,6 @@ test("returns the existing page without creating a duplicate", async () => {
   assert.equal(calls, 1);
 });
 
-test("rejects non-EUR writes while the owner ledger has fixed EUR fields", async () => {
-  const repository = createNotionMasterLedgerRepository({
-    apiKey: "notion-secret",
-    dataSourceId: "transactions-source",
-    fetchImpl: async () => {
-      throw new Error("fetch must not be called");
-    }
-  });
-
-  await assert.rejects(
-    repository.saveTransaction({ ...transaction(), baseCurrency: "USD" }),
-    /supports EUR as the base currency only/
-  );
-});
-
 function transaction(): MasterLedgerTransactionWrite {
   return {
     sourceId: "100001:77:transaction:1",
@@ -105,7 +91,7 @@ function transaction(): MasterLedgerTransactionWrite {
     originalCurrency: "USD",
     conversionRate: 0.85,
     baseAmount: 42.5,
-    baseCurrency: "EUR",
+    baseCurrency: "USD",
     category: "Еда",
     account: "Карта",
     destinationAccount: null,

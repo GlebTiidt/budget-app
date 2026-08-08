@@ -37,6 +37,12 @@ type ExpectedDebtOperation = Partial<
   >
 >;
 
+type ExpectedBalanceObservation = {
+  amount: number;
+  currency: string;
+  account: string;
+};
+
 type VerificationCase = {
   name: string;
   input: string;
@@ -44,10 +50,13 @@ type VerificationCase = {
   expectedBalanceObservations: number;
   expectedTransactions?: ExpectedTransaction[];
   expectedDebtOperations?: ExpectedDebtOperation[];
+  expectedBalanceObservationItems?: ExpectedBalanceObservation[];
 };
 
 const fixedNow = new Date("2026-08-04T07:45:00.000Z");
 const reasoningEffort = readReasoningEffort(process.argv.slice(2));
+const verbose = !process.argv.includes("--compact");
+const revisionsOnly = process.argv.includes("--revisions-only");
 const tokenUsage: OpenAiTokenUsage[] = [];
 
 const verificationCases: VerificationCase[] = [
@@ -168,6 +177,18 @@ const verificationCases: VerificationCase[] = [
     expectedBalanceObservations: 1
   },
   {
+    name: "several wallet balances form one snapshot",
+    input:
+      "Сегодня остатки: на карте 500 USD, наличными 2 000 000 VND и на вьетнамском счёте 3 000 000 VND.",
+    expectedDirections: { income: 0, expense: 0, transfer: 0 },
+    expectedBalanceObservations: 3,
+    expectedBalanceObservationItems: [
+      { amount: 500, currency: "USD", account: "Карта" },
+      { amount: 2_000_000, currency: "VND", account: "Наличные" },
+      { amount: 3_000_000, currency: "VND", account: "Вьетнамский счёт" }
+    ]
+  },
+  {
     name: "personal account transfer",
     input: "Сегодня перевёл 200 EUR с карты в сбережения",
     expectedDirections: { income: 0, expense: 0, transfer: 1 },
@@ -239,17 +260,27 @@ const parser = createOpenAiTransactionParser({
 
 console.log(`Live parser reasoning effort: ${reasoningEffort}.`);
 
-let passed = 0;
-let revisionSource: ParsedBudgetMessageDraft | undefined;
-let debtRevisionSource: ParsedBudgetMessageDraft | undefined;
+let passed = revisionsOnly ? verificationCases.length : 0;
+let revisionSource: ParsedBudgetMessageDraft | undefined = revisionsOnly
+  ? revisionFixture()
+  : undefined;
+let debtRevisionSource: ParsedBudgetMessageDraft | undefined = revisionsOnly
+  ? debtRevisionFixture()
+  : undefined;
+let walletRevisionSource: ParsedBudgetMessageDraft | undefined = revisionsOnly
+  ? walletRevisionFixture()
+  : undefined;
 
-for (const [index, verificationCase] of verificationCases.entries()) {
+for (const [index, verificationCase] of (revisionsOnly ? [] : verificationCases).entries()) {
   const parsed = await parser.parse(verificationCase.input, fixedNow);
   if (index === 0) {
     revisionSource = parsed;
   }
   if ((verificationCase.expectedDebtOperations?.length ?? 0) > 0) {
     debtRevisionSource = parsed;
+  }
+  if ((verificationCase.expectedBalanceObservationItems?.length ?? 0) > 1) {
+    walletRevisionSource = parsed;
   }
   const errors = verifyResult(parsed, verificationCase);
   const counts = countDirections(parsed);
@@ -261,7 +292,7 @@ for (const [index, verificationCase] of verificationCases.entries()) {
       `debts=${parsed.debtOperations.length}, balances=${parsed.balanceObservations.length}`
   );
 
-  for (const draft of parsed.transactions) {
+  for (const draft of verbose ? parsed.transactions : []) {
     const accountRoute =
       draft.direction === "transfer"
         ? ` · ${draft.account ?? "?"} → ${draft.destinationAccount ?? "?"}`
@@ -272,10 +303,16 @@ for (const [index, verificationCase] of verificationCases.entries()) {
     );
   }
 
-  for (const debt of parsed.debtOperations) {
+  for (const debt of verbose ? parsed.debtOperations : []) {
     console.log(
       `   debt:${debt.action}: ${debt.amount ?? "?"} ${debt.currency ?? "?"} · ` +
         `${debt.counterparty ?? "без контрагента"} · ${debt.account ?? "без счёта"}`
+    );
+  }
+
+  for (const balance of verbose ? parsed.balanceObservations : []) {
+    console.log(
+      `   balance: ${balance.amount} ${balance.currency} · ${balance.account ?? "без счёта"} · ${balance.occurredOn}`
     );
   }
 
@@ -288,11 +325,16 @@ for (const [index, verificationCase] of verificationCases.entries()) {
   }
 }
 
-console.log(`Live parser verification: ${passed}/${verificationCases.length} passed.`);
+console.log(
+  revisionsOnly
+    ? "Live parser verification: skipped; running revision fixtures only."
+    : `Live parser verification: ${passed}/${verificationCases.length} passed.`
+);
 
 let revisionPassed = false;
 let accountTransferRevisionPassed = false;
 let debtRevisionPassed = false;
+let walletRevisionPassed = false;
 if (revisionSource) {
   const revised = await parser.revise(
     formatBudgetMessagePreview(revisionSource),
@@ -313,6 +355,18 @@ if (revisionSource) {
       `transactions=${revised.transactions.length}, ` +
       `balances=${revised.balanceObservations.length}`
   );
+  if (!revisionPassed) {
+    console.log(
+      `Live reply revision result: ${JSON.stringify(
+        revised.transactions.map((item) => ({
+          direction: item.direction,
+          amount: item.amount,
+          account: item.account,
+          destinationAccount: item.destinationAccount
+        }))
+      )}`
+    );
+  }
 
   const routed = await parser.revise(
     formatBudgetMessagePreview(revisionSource),
@@ -372,11 +426,37 @@ if (debtRevisionSource) {
   );
 }
 
+if (walletRevisionSource) {
+  const revisedWallets = await parser.revise(
+    formatBudgetMessagePreview(walletRevisionSource),
+    "остаток Карта: 550 USD",
+    fixedNow
+  );
+  walletRevisionPassed =
+    revisedWallets.transactions.length === 0 &&
+    revisedWallets.debtOperations.length === 0 &&
+    revisedWallets.balanceObservations.length === 3 &&
+    revisedWallets.balanceObservations.some(
+      (item) => item.account === "Карта" && item.amount === 550 && item.currency === "USD"
+    ) &&
+    revisedWallets.balanceObservations.some(
+      (item) => item.account === "Наличные" && item.amount === 2_000_000 && item.currency === "VND"
+    ) &&
+    revisedWallets.balanceObservations.some(
+      (item) => item.account === "Вьетнамский счёт" && item.amount === 3_000_000 && item.currency === "VND"
+    );
+  console.log(
+    `Live wallet-balance revision: ${walletRevisionPassed ? "PASS" : "FAIL"} — ` +
+      `balances=${revisedWallets.balanceObservations.length}`
+  );
+}
+
 if (
   passed !== verificationCases.length ||
   !revisionPassed ||
   !accountTransferRevisionPassed ||
-  !debtRevisionPassed
+  !debtRevisionPassed ||
+  !walletRevisionPassed
 ) {
   process.exitCode = 1;
 }
@@ -406,6 +486,20 @@ function verifyResult(
     );
   }
 
+
+  for (const expected of verificationCase.expectedBalanceObservationItems ?? []) {
+    if (
+      !parsed.balanceObservations.some(
+        (actual) =>
+          actual.amount === expected.amount &&
+          actual.currency === expected.currency &&
+          actual.account === expected.account
+      )
+    ) {
+      errors.push(`missing expected balance observation ${JSON.stringify(expected)}`);
+    }
+  }
+
   for (const expected of verificationCase.expectedTransactions ?? []) {
     if (!parsed.transactions.some((actual) => transactionMatches(actual, expected))) {
       errors.push(`missing expected transaction ${JSON.stringify(expected)}`);
@@ -429,6 +523,94 @@ function verifyResult(
   }
 
   return errors;
+}
+
+function revisionFixture(): ParsedBudgetMessageDraft {
+  return {
+    transactions: [
+      fixtureTransaction("income", 240, "USD", "2026-08-03", "Работа", "Аванс от работодателя"),
+      fixtureTransaction("expense", 1_800_000, "VND", "2026-08-04", "Транспорт", "Поездка"),
+      fixtureTransaction("expense", 25, "USD", "2026-08-04", "Другое", "Виза"),
+      fixtureTransaction("expense", 420_000, "VND", "2026-08-04", "Транспорт", "Билет"),
+      fixtureTransaction("expense", 9, "USD", "2026-08-04", "Подписки", "Рабочий сервис")
+    ],
+    debtOperations: [],
+    balanceObservations: [
+      { amount: 30_000, currency: "VND", occurredOn: "2026-08-04", account: null, confidence: 1, ambiguities: [] }
+    ],
+    ambiguities: []
+  };
+}
+
+function debtRevisionFixture(): ParsedBudgetMessageDraft {
+  return {
+    transactions: [],
+    debtOperations: [
+      fixtureDebt("borrow", 350, "USD", "Петя", "Карта"),
+      fixtureDebt("repay_borrowed", 50, "USD", "Петя", "Карта"),
+      fixtureDebt("lend", 2_000_000, "VND", "Аня", "Наличные"),
+      fixtureDebt("collect", 100, "EUR", "Олег", "Карта")
+    ],
+    balanceObservations: [],
+    ambiguities: []
+  };
+}
+
+function walletRevisionFixture(): ParsedBudgetMessageDraft {
+  return {
+    transactions: [],
+    debtOperations: [],
+    balanceObservations: [
+      { amount: 500, currency: "USD", occurredOn: "2026-08-04", account: "Карта", confidence: 1, ambiguities: [] },
+      { amount: 2_000_000, currency: "VND", occurredOn: "2026-08-04", account: "Наличные", confidence: 1, ambiguities: [] },
+      { amount: 3_000_000, currency: "VND", occurredOn: "2026-08-04", account: "Вьетнамский счёт", confidence: 1, ambiguities: [] }
+    ],
+    ambiguities: []
+  };
+}
+
+function fixtureTransaction(
+  direction: "income" | "expense",
+  amount: number,
+  currency: string,
+  occurredOn: string,
+  category: string,
+  description: string
+): ParsedTransactionDraft {
+  return {
+    amount,
+    currency,
+    direction,
+    occurredOn,
+    category,
+    account: null,
+    destinationAccount: null,
+    description,
+    note: null,
+    confidence: 1,
+    ambiguities: []
+  };
+}
+
+function fixtureDebt(
+  action: ParsedDebtOperationDraft["action"],
+  amount: number,
+  currency: string,
+  counterparty: string,
+  account: string
+): ParsedDebtOperationDraft {
+  return {
+    amount,
+    currency,
+    action,
+    occurredOn: "2026-08-04",
+    counterparty,
+    account,
+    description: "Долговая операция",
+    note: null,
+    confidence: 1,
+    ambiguities: []
+  };
 }
 
 function countDirections(parsed: ParsedBudgetMessageDraft): DirectionCounts {

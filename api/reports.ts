@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { loadConfig } from "../src/config/loadConfig.js";
 import { createNotionMasterReportRepository } from "../src/integrations/notion/notionMasterReportRepository.js";
+import { createNotionMasterUserSettingsRepository } from "../src/integrations/notion/notionMasterUserSettingsRepository.js";
 import {
   isTelegramMasterUserAllowed,
   verifyTelegramWebAppInitData
@@ -27,7 +28,8 @@ export default async function handler(
     !config.telegramBotToken ||
     !config.masterTelegramUserId ||
     !config.notionApiKey ||
-    !config.notionBudgetDataSourceId
+    !config.notionBudgetDataSourceId ||
+    !config.notionMasterSettingsDataSourceId
   ) {
     response.statusCode = 503;
     response.end(JSON.stringify({ error: "report_not_configured" }));
@@ -76,9 +78,20 @@ export default async function handler(
       apiKey: config.notionApiKey,
       dataSourceId: config.notionBudgetDataSourceId
     });
-    const transactions = await repository.listTransactions(month);
+    const settingsRepository = createNotionMasterUserSettingsRepository({
+      apiKey: config.notionApiKey,
+      dataSourceId: config.notionMasterSettingsDataSourceId,
+      masterTelegramUserId: config.masterTelegramUserId
+    });
+    const [transactions, settings] = await Promise.all([
+      repository.listTransactions(month),
+      settingsRepository.findByTelegramUserId(userId)
+    ]);
+    if (!settings) throw new Error("Master settings are missing.");
     response.statusCode = 200;
-    response.end(JSON.stringify(buildMasterReport(month, transactions)));
+    response.end(
+      JSON.stringify(buildMasterReport(month, transactions, settings.baseCurrency))
+    );
   } catch (error: unknown) {
     console.error(
       "Master report query failed",

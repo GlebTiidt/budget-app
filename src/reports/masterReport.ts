@@ -1,3 +1,5 @@
+import type { SupportedCurrency } from "../budget/userSettings.js";
+
 export type ReportDirection = "income" | "expense" | "transfer";
 
 export type MasterLedgerTransaction = {
@@ -9,7 +11,7 @@ export type MasterLedgerTransaction = {
 
 export type MasterReport = {
   month: string;
-  currency: "EUR";
+  currency: SupportedCurrency;
   income: number;
   expense: number;
   net: number;
@@ -27,7 +29,8 @@ export type MasterReport = {
 
 export function buildMasterReport(
   month: string,
-  transactions: MasterLedgerTransaction[]
+  transactions: MasterLedgerTransaction[],
+  currency: SupportedCurrency
 ): MasterReport {
   validateMonth(month);
   const daysInMonth = getDaysInMonth(month);
@@ -81,7 +84,7 @@ export function buildMasterReport(
 
   return {
     month,
-    currency: "EUR",
+    currency,
     income,
     expense,
     net: roundMoney(income - expense),

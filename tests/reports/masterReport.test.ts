@@ -43,9 +43,9 @@ test("builds daily master totals and excludes personal transfers", () => {
       amount: 999,
       category: "Другое"
     }
-  ]);
+  ], "USD");
 
-  assert.equal(report.currency, "EUR");
+  assert.equal(report.currency, "USD");
   assert.equal(report.income, 900);
   assert.equal(report.expense, 42.75);
   assert.equal(report.net, 857.25);

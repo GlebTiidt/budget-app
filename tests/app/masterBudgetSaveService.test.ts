@@ -4,6 +4,7 @@ import { createMasterBudgetSaveService } from "../../src/app/masterBudgetSaveSer
 import type { MasterBalanceObservationWrite } from "../../src/integrations/notion/notionMasterBalanceRepository.js";
 import type { MasterDebtOperationWrite } from "../../src/integrations/notion/notionMasterDebtRepository.js";
 import type { MasterLedgerTransactionWrite } from "../../src/integrations/notion/notionMasterLedgerRepository.js";
+import type { OpeningBalance } from "../../src/integrations/notion/notionMasterOpeningBalanceRepository.js";
 import type { ParsedBudgetMessageDraft, ParsedDebtOperationDraft, ParsedTransactionDraft } from "../../src/integrations/openai/openAiTransactionParser.js";
 
 test("uses the first confirmed balance-only message as the opening anchor", async () => {
@@ -15,11 +16,32 @@ test("uses the first confirmed balance-only message as the opening anchor", asyn
     assert.equal(result.currentBalance, 132);
   }
   assert.equal(state.observations[0]?.status, "Принято пользователем");
-  assert.deepEqual(state.initialized, { amountEur: 132, effectiveOn: "2026-08-08" });
+  assert.deepEqual(state.initialized, { amount: 132, currency: "USD", effectiveOn: "2026-08-08" });
+});
+
+test("uses several wallet balances as one opening anchor", async () => {
+  const state = harness(null);
+  const parsed: ParsedBudgetMessageDraft = {
+    transactions: [],
+    debtOperations: [],
+    balanceObservations: [
+      { amount: 500, currency: "USD", occurredOn: "2026-08-08", account: "Карта", confidence: 1, ambiguities: [] },
+      { amount: 250, currency: "USD", occurredOn: "2026-08-08", account: "Наличные", confidence: 1, ambiguities: [] }
+    ],
+    ambiguities: []
+  };
+  const result = await state.service.save(input(parsed));
+  assert.equal(result.status, "saved");
+  if (result.status === "saved") assert.equal(result.currentBalance, 750);
+  assert.equal(state.observations.length, 2);
+  assert.deepEqual(state.observations.map((item) => item.account), ["Карта", "Наличные"]);
+  assert.deepEqual(state.observations.map((item) => item.acceptedBalance), [750, 750]);
+  assert.deepEqual(state.observations.map((item) => item.isAnchor), [false, true]);
+  assert.deepEqual(state.initialized, { amount: 750, currency: "USD", effectiveOn: "2026-08-08" });
 });
 
 test("keeps pre-anchor history out of the current balance", async () => {
-  const state = harness({ amountEur: 1000, effectiveOn: "2026-08-08" });
+  const state = harness({ amount: 1000, currency: "USD", effectiveOn: "2026-08-08" });
   const parsed: ParsedBudgetMessageDraft = {
     transactions: [
       transaction("income", 200, "2026-08-07"),
@@ -40,18 +62,18 @@ test("keeps pre-anchor history out of the current balance", async () => {
 });
 
 test("asks for confirmation before accepting a balance outside tolerance", async () => {
-  const state = harness({ amountEur: 1000, effectiveOn: "2026-08-08" });
+  const state = harness({ amount: 1000, currency: "USD", effectiveOn: "2026-08-08" });
   const parsed = balanceOnly(800, "2026-08-08");
   const result = await state.service.save(input(parsed));
   assert.deepEqual(result, {
     status: "balance_mismatch", observedBalance: 800, calculatedBalance: 1000,
-    difference: -200, tolerance: 20, baseCurrency: "EUR"
+    difference: -200, tolerance: 20, baseCurrency: "USD"
   });
   assert.equal(state.observations.length, 0);
 });
 
 test("previews the calculated balance while ignoring pre-anchor history", async () => {
-  const state = harness({ amountEur: 1000, effectiveOn: "2026-08-08" });
+  const state = harness({ amount: 1000, currency: "USD", effectiveOn: "2026-08-08" });
   const parsed: ParsedBudgetMessageDraft = {
     transactions: [
       transaction("income", 200, "2026-08-07"),
@@ -62,11 +84,11 @@ test("previews the calculated balance while ignoring pre-anchor history", async 
   assert.equal(await state.service.previewCurrentBalance(input(parsed)), 950);
 });
 
-function harness(opening: { amountEur: number; effectiveOn: string } | null) {
+function harness(opening: { amount: number; currency: "USD"; effectiveOn: string } | null) {
   const transactions: MasterLedgerTransactionWrite[] = [];
   const debts: MasterDebtOperationWrite[] = [];
   const observations: MasterBalanceObservationWrite[] = [];
-  let initialized: { amountEur: number; effectiveOn: string } | null = null;
+  let initialized: OpeningBalance | null = null;
   const service = createMasterBudgetSaveService({
     currencyConverter: { async convert(value) { return { originalAmount: value.amount, originalCurrency: value.from, occurredOn: value.occurredOn, convertedAmount: value.amount, targetCurrency: value.to ?? "EUR", rate: 1, rateDate: value.occurredOn }; } },
     ledgerRepository: {
@@ -81,7 +103,7 @@ function harness(opening: { amountEur: number; effectiveOn: string } | null) {
     },
     balanceRepository: {
       async saveObservation(value) { observations.push(value); return { pageId: `b${observations.length}`, created: true }; },
-      async findLatestAccepted() { return opening ? { pageId: "anchor", sourceId: "existing:anchor:balance:1", order: 1, occurredOn: opening.effectiveOn, balance: opening.amountEur } : null; }
+      async findLatestAccepted() { return opening ? { pageId: "anchor", sourceId: "existing:anchor:balance:1", order: 1, occurredOn: opening.effectiveOn, balance: opening.amount, baseCurrency: opening.currency } : null; }
     },
     openingBalanceRepository: {
       async find() { return opening; },
@@ -92,14 +114,14 @@ function harness(opening: { amountEur: number; effectiveOn: string } | null) {
 }
 
 function input(parsed: ParsedBudgetMessageDraft) {
-  return { telegramUserId: "10", chatId: "10", sourceMessageId: 20, baseCurrency: "EUR" as const, parsed };
+  return { telegramUserId: "10", chatId: "10", sourceMessageId: 20, baseCurrency: "USD" as const, parsed };
 }
 function balanceOnly(amount: number, occurredOn: string): ParsedBudgetMessageDraft {
-  return { transactions: [], debtOperations: [], balanceObservations: [{ amount, currency: "EUR", occurredOn, account: null, confidence: 1, ambiguities: [] }], ambiguities: [] };
+  return { transactions: [], debtOperations: [], balanceObservations: [{ amount, currency: "USD", occurredOn, account: null, confidence: 1, ambiguities: [] }], ambiguities: [] };
 }
 function transaction(direction: "income" | "expense", amount: number, occurredOn: string): ParsedTransactionDraft {
-  return { amount, currency: "EUR", direction, occurredOn, category: direction === "income" ? "Работа" : "Еда", account: "Карта", destinationAccount: null, description: "Тест", note: null, confidence: 1, ambiguities: [] };
+  return { amount, currency: "USD", direction, occurredOn, category: direction === "income" ? "Работа" : "Еда", account: "Карта", destinationAccount: null, description: "Тест", note: null, confidence: 1, ambiguities: [] };
 }
 function debt(action: "borrow", amount: number, occurredOn: string): ParsedDebtOperationDraft {
-  return { amount, currency: "EUR", action, occurredOn, counterparty: "Марина", account: "Карта", description: "Тестовый долг", note: null, confidence: 1, ambiguities: [] };
+  return { amount, currency: "USD", action, occurredOn, counterparty: "Марина", account: "Карта", description: "Тестовый долг", note: null, confidence: 1, ambiguities: [] };
 }

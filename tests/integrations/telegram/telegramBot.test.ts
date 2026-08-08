@@ -254,6 +254,38 @@ test("shows debt operations separately and puts total balance last", () => {
   );
 });
 
+test("shows several wallet balances separately and sums them once", () => {
+  const parsed: ParsedBudgetMessageDraft = {
+    transactions: [],
+    debtOperations: [],
+    balanceObservations: [
+      { amount: 500, currency: "USD", occurredOn: "2026-08-08", account: "Карта", confidence: 1, ambiguities: [] },
+      { amount: 2_500_000, currency: "VND", occurredOn: "2026-08-08", account: "Вьетнамский счёт", confidence: 1, ambiguities: [] }
+    ],
+    ambiguities: []
+  };
+  const preview = formatBudgetMessagePreview(parsed, {
+    baseCurrency: "USD",
+    summary: {
+      baseCurrency: "USD",
+      income: 0,
+      expense: 0,
+      incompleteOperationCount: 0,
+      observedBalances: [
+        { account: "Карта", amount: 500 },
+        { account: "Вьетнамский счёт", amount: 100 }
+      ],
+      debt: { owedByUser: [], owedToUser: [] }
+    }
+  });
+
+  assert.match(preview, /<b>Остатки по кошелькам:<\/b>/);
+  assert.match(preview, /• Карта · <b>500 USD<\/b> · 08\.08\.2026/);
+  assert.match(preview, /• Вьетнамский счёт · <b>2[  ]500[  ]000 VND<\/b> · 08\.08\.2026/);
+  assert.match(preview, /<b>Общий остаток:<\/b> <b>600 USD<\/b>/);
+  assert.doesNotMatch(preview, /Б[12]\./);
+});
+
 test("keeps complete clarification text when the preview fits Telegram", () => {
   const clarification =
     "Нужно уточнить сумму в донгах после обмена, если она отличалась от эквивалента исходных 177 USD, и подтвердить, что вся сумма пришла на Вьетнамский счёт.";

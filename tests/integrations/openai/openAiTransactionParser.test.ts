@@ -125,6 +125,25 @@ test("normalizes both accounts of a personal transfer", () => {
   );
 });
 
+test("drops an invented no-op transfer between the same account", () => {
+  const parsed = normalizeParsedBudgetMessage({
+    transactions: [
+      transaction({
+        direction: "transfer",
+        category: null,
+        account: "Вьетнамский счёт",
+        destinationAccount: "Вьетнамский счёт",
+        description: "Лишний перевод"
+      })
+    ],
+    debtOperations: [],
+    balanceObservations: [],
+    ambiguities: []
+  });
+
+  assert.deepEqual(parsed.transactions, []);
+});
+
 test("keeps four debt actions separate from income and expense", () => {
   const parsed = normalizeParsedBudgetMessage({
     transactions: [],

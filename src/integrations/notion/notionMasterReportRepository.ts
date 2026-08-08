@@ -101,7 +101,7 @@ function mapNotionTransaction(value: unknown): MasterLedgerTransaction | null {
 
   const occurredOn = readDate(properties["Дата"]);
   const direction = readDirection(properties["Тип"]);
-  const amount = readNumber(properties["Сумма EUR"]);
+  const amount = readNumber(properties["Сумма в основной валюте"]);
   if (!occurredOn || !direction || amount === null || amount < 0) {
     return null;
   }

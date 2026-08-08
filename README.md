@@ -36,7 +36,7 @@ npm install
 npm run dev
 ```
 
-The project has verified configuration, multi-operation structured parsing, chart rendering, currency conversion, persistent confirmation state, and idempotent Notion repositories. The owner initializes balance tracking by confirming one balance-only Telegram message.
+The project has verified configuration, multi-operation structured parsing, chart rendering, currency conversion, persistent confirmation state, and idempotent Notion repositories. The owner initializes balance tracking by confirming one balance-only Telegram message containing either one total or several named wallet balances on the same date.
 
 For a dedicated server, set `USER_DATABASE_PATH` to a file on a persistent volume. One SQLite database stores all user profiles as isolated rows keyed by Telegram ID; do not point it at an ephemeral container directory. See [`docs/server-storage.md`](docs/server-storage.md).
 

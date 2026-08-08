@@ -69,7 +69,7 @@ export function createNotionMasterDebtRepository(
         method: "POST", headers: headers(options.apiKey), body: JSON.stringify({
           filter: { and: [
             { property: "Порядок", number: { greater_than: order } },
-            { property: "Остаток EUR", number: { is_not_empty: true } }
+            { property: "Остаток в основной валюте", number: { is_not_empty: true } }
           ] },
           sorts: [{ property: "Порядок", direction: "descending" }], page_size: 1
         })
@@ -81,7 +81,7 @@ export function createNotionMasterDebtRepository(
       const page = record(result.results[0]);
       const props = record(page?.properties);
       const itemOrder = record(props?.["Порядок"])?.number;
-      const balance = record(props?.["Остаток EUR"])?.number;
+      const balance = record(props?.["Остаток в основной валюте"])?.number;
       const date = record(record(props?.["Дата"])?.date)?.start;
       if (!Number.isSafeInteger(itemOrder) || typeof balance !== "number" || !Number.isFinite(balance) || typeof date !== "string") throw new Error("Notion debt contains an invalid running balance row.");
       return { order: Number(itemOrder), occurredOn: date, runningBalance: balance };
@@ -94,7 +94,7 @@ export function createNotionMasterDebtRepository(
           filter: { and: [
             { property: "Порядок", number: { greater_than: afterOrder } },
             { property: "Порядок", number: { less_than: beforeOrder } },
-            { property: "Остаток EUR", number: { is_not_empty: true } }
+            { property: "Остаток в основной валюте", number: { is_not_empty: true } }
           ] },
           sorts: [{ property: "Порядок", direction: "descending" }], page_size: 1
         })
@@ -106,7 +106,7 @@ export function createNotionMasterDebtRepository(
       const page = record(result.results[0]);
       const props = record(page?.properties);
       const itemOrder = record(props?.["Порядок"])?.number;
-      const balance = record(props?.["Остаток EUR"])?.number;
+      const balance = record(props?.["Остаток в основной валюте"])?.number;
       const date = record(record(props?.["Дата"])?.date)?.start;
       if (!Number.isSafeInteger(itemOrder) || typeof balance !== "number" || !Number.isFinite(balance) || typeof date !== "string") throw new Error("Notion debt contains an invalid running balance row.");
       return { order: Number(itemOrder), occurredOn: date, runningBalance: balance };
@@ -146,12 +146,13 @@ function properties(operation: MasterDebtOperationWrite) {
     "Контрагент": richText(operation.counterparty),
     "Исходная сумма": { number: operation.originalAmount },
     "Валюта": { select: { name: operation.originalCurrency } },
-    "Курс к EUR": { number: operation.conversionRate },
-    "Сумма EUR": { number: operation.baseAmount },
+    "Курс к основной валюте": { number: operation.conversionRate },
+    "Сумма в основной валюте": { number: operation.baseAmount },
+    "Основная валюта": { select: { name: operation.baseCurrency } },
     "Счёт": { select: { name: operation.account } },
     "Комментарий": richText(operation.comment),
     "Telegram ID": richText(operation.sourceId),
-    "Остаток EUR": { number: operation.runningBalance },
+    "Остаток в основной валюте": { number: operation.runningBalance },
     "Порядок": { number: operation.order }
   };
 }
@@ -183,8 +184,8 @@ function validate(operation: MasterDebtOperationWrite) {
   if (!Number.isFinite(operation.originalAmount) || operation.originalAmount <= 0) throw new Error("Debt amount must be positive.");
   if (!(CURRENCIES as readonly string[]).includes(operation.originalCurrency)) throw new Error("Debt currency is not supported.");
   if (!Number.isFinite(operation.conversionRate) || operation.conversionRate <= 0) throw new Error("Debt conversion rate must be positive.");
-  if (!Number.isFinite(operation.baseAmount) || operation.baseAmount < 0) throw new Error("Debt EUR amount must be non-negative.");
-  if (operation.baseCurrency !== "EUR") throw new Error("The current Notion debt ledger supports EUR as the base currency only.");
+  if (!Number.isFinite(operation.baseAmount) || operation.baseAmount < 0) throw new Error("Debt base-currency amount must be non-negative.");
+  if (!(CURRENCIES as readonly string[]).includes(operation.baseCurrency)) throw new Error("Debt base currency is not supported.");
   if (!(ACCOUNTS as readonly string[]).includes(operation.account)) throw new Error("Debt account is not supported.");
   if (operation.runningBalance !== null && !Number.isFinite(operation.runningBalance)) throw new Error("Debt running balance must be finite.");
 }

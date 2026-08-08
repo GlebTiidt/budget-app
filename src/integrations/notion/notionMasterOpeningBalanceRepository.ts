@@ -1,5 +1,9 @@
+import { CURRENCIES } from "../../budget/catalog.js";
+import type { SupportedCurrency } from "../../budget/userSettings.js";
+
 export type OpeningBalance = {
-  amountEur: number;
+  amount: number;
+  currency: SupportedCurrency;
   effectiveOn: string;
 };
 
@@ -36,7 +40,8 @@ export function createNotionMasterOpeningBalanceRepository(
       const current = readOpeningBalance(page);
       if (current) {
         if (
-          current.amountEur === balance.amountEur &&
+          current.amount === balance.amount &&
+          current.currency === balance.currency &&
           current.effectiveOn === balance.effectiveOn
         ) {
           return { created: false };
@@ -51,7 +56,7 @@ export function createNotionMasterOpeningBalanceRepository(
           headers: headers(options.apiKey),
           body: JSON.stringify({
             properties: {
-              "Начальный остаток EUR": { number: balance.amountEur },
+              "Начальный остаток": { number: balance.amount },
               "Дата начального остатка": { date: { start: balance.effectiveOn } }
             }
           })
@@ -91,18 +96,23 @@ async function findSettingsPage(fetchImpl: typeof fetch, options: Options) {
 
 function readOpeningBalance(page: Record<string, unknown>): OpeningBalance | null {
   const properties = requireRecord(page.properties, "settings properties");
-  const amount = requireRecord(properties["Начальный остаток EUR"], "opening amount property").number;
+  const amount = requireRecord(properties["Начальный остаток"], "opening amount property").number;
+  const currency = requireRecord(requireRecord(properties["Основная валюта"], "base currency property").select, "base currency select").name;
   const dateValue = requireRecord(properties["Дата начального остатка"], "opening date property").date;
   if (amount === null && dateValue === null) return null;
   if (!Number.isFinite(amount) || !dateValue) throw new Error("Notion opening balance is only partially configured.");
   const effectiveOn = requiredString(requireRecord(dateValue, "opening date").start, "opening date");
-  const result = { amountEur: Number(amount), effectiveOn };
+  if (typeof currency !== "string" || !(CURRENCIES as readonly string[]).includes(currency)) {
+    throw new Error("Notion opening balance currency is invalid.");
+  }
+  const result = { amount: Number(amount), currency: currency as SupportedCurrency, effectiveOn };
   validateBalance(result);
   return result;
 }
 
 function validateBalance(balance: OpeningBalance) {
-  if (!Number.isFinite(balance.amountEur) || balance.amountEur < 0) throw new Error("Opening EUR balance must be non-negative.");
+  if (!Number.isFinite(balance.amount)) throw new Error("Opening balance must be finite.");
+  if (!(CURRENCIES as readonly string[]).includes(balance.currency)) throw new Error("Opening balance currency is not supported.");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(balance.effectiveOn)) throw new Error("Opening balance date must use YYYY-MM-DD.");
 }
 function headers(apiKey: string) { return { authorization: `Bearer ${apiKey}`, "content-type": "application/json", "notion-version": NOTION_VERSION }; }

@@ -12,8 +12,8 @@ test("initializes the empty master opening balance", async () => {
       return Response.json({ id: "settings-page" });
     }
   });
-  assert.deepEqual(await repository.initialize({ amountEur: 132, effectiveOn: "2026-08-08" }), { created: true });
-  assert.deepEqual(calls[1].body.properties["Начальный остаток EUR"], { number: 132 });
+  assert.deepEqual(await repository.initialize({ amount: 132, currency: "USD", effectiveOn: "2026-08-08" }), { created: true });
+  assert.deepEqual(calls[1].body.properties["Начальный остаток"], { number: 132 });
 });
 
 test("treats the same opening balance as an idempotent retry", async () => {
@@ -22,7 +22,7 @@ test("treats the same opening balance as an idempotent retry", async () => {
     apiKey: "secret", dataSourceId: "settings", masterTelegramUserId: "10",
     fetchImpl: async () => { calls += 1; return Response.json({ results: [settingsPage(132, "2026-08-08")] }); }
   });
-  assert.deepEqual(await repository.initialize({ amountEur: 132, effectiveOn: "2026-08-08" }), { created: false });
+  assert.deepEqual(await repository.initialize({ amount: 132, currency: "USD", effectiveOn: "2026-08-08" }), { created: false });
   assert.equal(calls, 1);
 });
 
@@ -31,12 +31,13 @@ test("rejects replacement of an existing opening balance", async () => {
     apiKey: "secret", dataSourceId: "settings", masterTelegramUserId: "10",
     fetchImpl: async () => Response.json({ results: [settingsPage(100, "2026-08-01")] })
   });
-  await assert.rejects(repository.initialize({ amountEur: 132, effectiveOn: "2026-08-08" }), /already initialized/);
+  await assert.rejects(repository.initialize({ amount: 132, currency: "USD", effectiveOn: "2026-08-08" }), /already initialized/);
 });
 
 function settingsPage(amount: number | null, date: string | null) {
   return { id: "settings-page", properties: {
-    "Начальный остаток EUR": { number: amount },
+    "Начальный остаток": { number: amount },
+    "Основная валюта": { select: { name: "USD" } },
     "Дата начального остатка": { date: date ? { start: date } : null }
   } };
 }

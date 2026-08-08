@@ -242,7 +242,7 @@ function showLoading() {
 function formatMoney(value) {
   return new Intl.NumberFormat("ru-RU", {
     style: "currency",
-    currency: report?.currency ?? "EUR",
+    currency: report?.currency ?? "USD",
     maximumFractionDigits: 2
   }).format(value);
 }

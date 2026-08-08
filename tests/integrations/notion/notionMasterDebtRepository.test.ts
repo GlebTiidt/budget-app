@@ -13,7 +13,8 @@ test("writes a debt row after checking its stable source ID", async () => {
   assert.deepEqual(await repository.saveDebtOperation(debt()), { pageId: "debt-page", created: true });
   assert.deepEqual(calls[0].body.filter, { property: "Telegram ID", rich_text: { equals: "10:20:debt:1" } });
   assert.deepEqual(calls[1].body.properties["Действие"], { select: { name: "Дал в долг" } });
-  assert.deepEqual(calls[1].body.properties["Остаток EUR"], { number: 900 });
+  assert.deepEqual(calls[1].body.properties["Остаток в основной валюте"], { number: 900 });
+  assert.deepEqual(calls[1].body.properties["Основная валюта"], { select: { name: "USD" } });
 });
 
 test("does not duplicate an existing debt source ID", async () => {
@@ -31,8 +32,8 @@ function debt(): MasterDebtOperationWrite {
   return {
     sourceId: "10:20:debt:1", telegramUserId: "10", order: 2001,
     description: "Займ Илье", occurredOn: "2026-08-08", action: "lend",
-    counterparty: "Илья", originalAmount: 100, originalCurrency: "EUR",
-    conversionRate: 1, baseAmount: 100, baseCurrency: "EUR", account: "Карта",
+    counterparty: "Илья", originalAmount: 100, originalCurrency: "USD",
+    conversionRate: 1, baseAmount: 100, baseCurrency: "USD", account: "Карта",
     comment: null, runningBalance: 900
   };
 }

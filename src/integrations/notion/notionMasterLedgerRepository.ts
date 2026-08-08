@@ -110,7 +110,7 @@ export function createNotionMasterLedgerRepository(
           body: JSON.stringify({
             filter: { and: [
               { property: "Порядок", number: { greater_than: order } },
-              { property: "Остаток EUR", number: { is_not_empty: true } }
+              { property: "Остаток в основной валюте", number: { is_not_empty: true } }
             ] },
             sorts: [{ property: "Порядок", direction: "descending" }],
             page_size: 1
@@ -139,7 +139,7 @@ export function createNotionMasterLedgerRepository(
               and: [
                 { property: "Порядок", number: { greater_than: afterOrder } },
                 { property: "Порядок", number: { less_than: beforeOrder } },
-                { property: "Остаток EUR", number: { is_not_empty: true } }
+                { property: "Остаток в основной валюте", number: { is_not_empty: true } }
               ]
             },
             sorts: [{ property: "Порядок", direction: "descending" }],
@@ -159,7 +159,7 @@ function mapRunningBalance(value: unknown): MasterRunningBalanceRow {
   const page = asRecord(value);
   const properties = asRecord(page?.properties);
   const order = asRecord(properties?.["Порядок"])?.number;
-  const balance = asRecord(properties?.["Остаток EUR"])?.number;
+  const balance = asRecord(properties?.["Остаток в основной валюте"])?.number;
   const date = asRecord(asRecord(properties?.["Дата"])?.date)?.start;
   if (!Number.isSafeInteger(order) || typeof balance !== "number" || !Number.isFinite(balance) || typeof date !== "string") {
     throw new Error("Notion transaction contains an invalid running balance row.");
@@ -211,8 +211,9 @@ function transactionProperties(transaction: MasterLedgerTransactionWrite) {
     "Тип": { select: { name: directionName(transaction.direction) } },
     "Исходная сумма": { number: transaction.originalAmount },
     "Валюта": { select: { name: transaction.originalCurrency } },
-    "Курс к EUR": { number: transaction.conversionRate },
-    "Сумма EUR": { number: transaction.baseAmount },
+    "Курс к основной валюте": { number: transaction.conversionRate },
+    "Сумма в основной валюте": { number: transaction.baseAmount },
+    "Основная валюта": { select: { name: transaction.baseCurrency } },
     "Категория": transaction.category
       ? { select: { name: transaction.category } }
       : { select: null },
@@ -222,7 +223,7 @@ function transactionProperties(transaction: MasterLedgerTransactionWrite) {
       : { select: null },
     "Комментарий": richTextProperty(transaction.comment),
     "Telegram ID": richTextProperty(transaction.sourceId),
-    "Остаток EUR": { number: transaction.runningBalance },
+    "Остаток в основной валюте": { number: transaction.runningBalance },
     "Порядок": { number: transaction.order }
   };
 }
@@ -271,11 +272,9 @@ function validateTransaction(transaction: MasterLedgerTransactionWrite): void {
   }
   requirePositiveNumber(transaction.originalAmount, "Transaction original amount");
   requirePositiveNumber(transaction.conversionRate, "Transaction conversion rate");
-  requireNonNegativeNumber(transaction.baseAmount, "Transaction EUR amount");
-  if (transaction.baseCurrency !== "EUR") {
-    throw new Error(
-      "The current Notion ledger supports EUR as the base currency only."
-    );
+  requireNonNegativeNumber(transaction.baseAmount, "Transaction base-currency amount");
+  if (!(CURRENCIES as readonly string[]).includes(transaction.baseCurrency)) {
+    throw new Error("Transaction base currency is not supported.");
   }
   if (!(CURRENCIES as readonly string[]).includes(transaction.originalCurrency)) {
     throw new Error("Transaction currency is not supported.");
@@ -301,6 +300,9 @@ function validateTransaction(transaction: MasterLedgerTransactionWrite): void {
       !(ACCOUNTS as readonly string[]).includes(transaction.destinationAccount)
     ) {
       throw new Error("Personal transfers require a supported destination account.");
+    }
+    if (transaction.account === transaction.destinationAccount) {
+      throw new Error("Personal transfers require different source and destination accounts.");
     }
   } else if (transaction.destinationAccount !== null) {
     throw new Error("Only personal transfers may have a destination account.");

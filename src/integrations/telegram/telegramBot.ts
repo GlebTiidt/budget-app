@@ -663,6 +663,15 @@ function buildBudgetMessagePreview(
     );
   }
 
+  if (parsed.balanceObservations.length) {
+    sections.push(
+      [
+        "<b>Остатки по кошелькам:</b>",
+        ...parsed.balanceObservations.map(formatWalletBalanceObservation)
+      ].join("\n")
+    );
+  }
+
   const clarifications = collectClarificationRequests(
     parsed,
     orderedTransactions,
@@ -950,12 +959,13 @@ function formatBalanceMismatch(result: {
   calculatedBalance: number;
   difference: number;
   tolerance: number;
+  baseCurrency: string;
 }): string {
   return [
     "<b>Остаток не совпал с расчётом.</b>",
-    `По операциям: <b>${formatAmount(result.calculatedBalance)} EUR</b>.`,
-    `В сообщении: <b>${formatAmount(result.observedBalance)} EUR</b>.`,
-    `Разница: <b>${formatAmount(Math.abs(result.difference))} EUR</b>, допустимая погрешность: <b>${formatAmount(result.tolerance)} EUR</b>.`,
+    `По операциям: <b>${formatAmount(result.calculatedBalance)} ${result.baseCurrency}</b>.`,
+    `В сообщении: <b>${formatAmount(result.observedBalance)} ${result.baseCurrency}</b>.`,
+    `Разница: <b>${formatAmount(Math.abs(result.difference))} ${result.baseCurrency}</b>, допустимая погрешность: <b>${formatAmount(result.tolerance)} ${result.baseCurrency}</b>.`,
     "Возможно, какая-то операция не внесена. Пришлите её отдельным сообщением или ответьте «ничего не пропустил», чтобы принять ваш остаток."
   ].join("\n\n");
 }
@@ -1143,6 +1153,16 @@ function formatCombinedDebtOperation(
     fields.push("низкая уверенность");
   }
   return fields.join(" · ");
+}
+
+function formatWalletBalanceObservation(
+  observation: ParsedBudgetMessageDraft["balanceObservations"][number]
+): string {
+  return [
+    `• ${escapeTelegramHtml(observation.account ?? "Все кошельки")}`,
+    boldTelegramHtml(formatDraftAmount(observation.amount, observation.currency)),
+    formatIsoDate(observation.occurredOn)
+  ].join(" · ");
 }
 
 function formatDebtTotals(positions: DebtPosition[]): string {

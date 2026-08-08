@@ -77,7 +77,7 @@ function notionRow(
     properties: {
       Дата: { type: "date", date: { start: occurredOn, end: null } },
       Тип: { type: "select", select: { name: direction } },
-      "Сумма EUR": { type: "number", number: amount },
+      "Сумма в основной валюте": { type: "number", number: amount },
       Категория: {
         type: "select",
         select: category ? { name: category } : null

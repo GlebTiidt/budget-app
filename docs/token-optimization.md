@@ -27,6 +27,8 @@ The debt-aware structured contract and prompt-cache `v2` were verified on 2026-0
 
 The independently numbered debt-section contract and prompt-cache `v3` were verified on 2026-08-08. All 12 parser cases, both transaction reply revisions, and the new `долг 1: счёт Сбережения` revision passed with `reasoning: none`. Across 15 requests, the API reported 19,630 input tokens, 12,232 cached input tokens (`62.3%` of input), 1,112 cache-write tokens, 2,869 output tokens, zero reasoning tokens, and 22,499 total tokens.
 
+The multi-wallet contract added a thirteenth parse case and a fourth revision fixture. All 13 parse cases passed, including three same-date wallet observations. One mass-account revision exposed a model-generated transfer whose source and destination were identical; the domain normalizer now drops this impossible no-op and the Notion repository rejects it. The final `v5` revision run passed all four fixtures with 6,921 total tokens and zero reasoning tokens. The delivered parser therefore keeps wallet corrections, debt numbering, mass account assignment, and genuine two-account transfers green.
+
 ## Official OpenAI Guidance Used
 
 - [GPT-5.6 guidance](https://developers.openai.com/api/docs/guides/latest-model): prefer lean prompts, choose reasoning effort through representative evaluations, and measure cache reads and writes.
