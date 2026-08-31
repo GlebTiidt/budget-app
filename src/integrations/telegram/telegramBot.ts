@@ -363,6 +363,49 @@ export function createTelegramBotApp(
 
         if (isWholePreviewConfirmation(instruction)) {
           if (financialSavingEnabled && storedDraft && storedPayload) {
+            const unresolved = collectClarificationRequests(
+              storedPayload.parsed,
+              orderTransactionsForPreview(storedPayload.parsed.transactions),
+              true
+            );
+            if (unresolved.length) {
+              const sent = await ctx.reply(
+                await formatUserBudgetMessagePreview(
+                  storedPayload.parsed,
+                  settings.baseCurrency,
+                  currencyConverter,
+                  financialSavingEnabled,
+                  await previewPersistentBalance(
+                    financialSavingEnabled,
+                    financialSaveService,
+                    telegramUserId,
+                    String(ctx.chat.id),
+                    storedDraft.sourceMessageId,
+                    settings.baseCurrency,
+                    storedPayload.parsed
+                  )
+                ),
+                previewReplyOptions
+              );
+              await telegramDraftRepository!.save({
+                telegramUserId,
+                chatId: String(ctx.chat.id),
+                sourceMessageId: storedDraft.sourceMessageId,
+                previewMessageId: sent.message_id,
+                serializedDraft: serializeStoredBudgetDraft({
+                  ...storedPayload,
+                  previewMessageIds: [
+                    ...new Set([
+                      ...storedPayload.previewMessageIds,
+                      sent.message_id
+                    ])
+                  ]
+                }),
+                expiresAt: storedDraft.expiresAt
+              });
+              await telegramDraftRepository!.trash(storedDraft.pageId);
+              return;
+            }
             let result;
             try {
               result = await financialSaveService!.save({
@@ -381,7 +424,7 @@ export function createTelegramBotApp(
               );
               if (!friendlyError) {
                 try {
-                  const fallback = await notionWriteFailureRepository.save({
+                  await notionWriteFailureRepository.save({
                     telegramUserId,
                     chatId: String(ctx.chat.id),
                     sourceMessageId: storedDraft.sourceMessageId,
@@ -390,10 +433,7 @@ export function createTelegramBotApp(
                       error instanceof Error ? error.message : "unknown error",
                     normalizedDraft: storedPayload.parsed
                   });
-                  console.error(
-                    "Normalized Notion write fallback created",
-                    JSON.stringify({ path: fallback.path })
-                  );
+                  console.error("Normalized Notion write fallback created");
                 } catch (fallbackError: unknown) {
                   console.error(
                     "Normalized Notion write fallback failed",
@@ -469,6 +509,7 @@ export function createTelegramBotApp(
 
         try {
           const revised = await parser.revise(repliedPreview, instruction);
+          const revisedHasFinancialData = hasFinancialData(revised);
           const sent = await ctx.reply(
             await formatUserBudgetMessagePreview(
               revised,
@@ -485,26 +526,30 @@ export function createTelegramBotApp(
                 revised
               )
             ),
-            previewReplyOptions
+            revisedHasFinancialData
+              ? previewReplyOptions
+              : { parse_mode: "HTML" as const }
           );
           if (storedDraft && storedPayload) {
-            await telegramDraftRepository!.save({
-              telegramUserId,
-              chatId: String(ctx.chat.id),
-              sourceMessageId: storedDraft.sourceMessageId,
-              previewMessageId: sent.message_id,
-              serializedDraft: serializeStoredBudgetDraft({
-                parsed: revised,
-                previewMessageIds: [
-                  ...new Set([
-                    ...storedPayload.previewMessageIds,
-                    sent.message_id
-                  ])
-                ],
-                acceptBalanceMismatch: false
-              }),
-              expiresAt: storedDraft.expiresAt
-            });
+            if (revisedHasFinancialData) {
+              await telegramDraftRepository!.save({
+                telegramUserId,
+                chatId: String(ctx.chat.id),
+                sourceMessageId: storedDraft.sourceMessageId,
+                previewMessageId: sent.message_id,
+                serializedDraft: serializeStoredBudgetDraft({
+                  parsed: revised,
+                  previewMessageIds: [
+                    ...new Set([
+                      ...storedPayload.previewMessageIds,
+                      sent.message_id
+                    ])
+                  ],
+                  acceptBalanceMismatch: false
+                }),
+                expiresAt: storedDraft.expiresAt
+              });
+            }
             await telegramDraftRepository!.trash(storedDraft.pageId);
           }
         } catch (error: unknown) {
@@ -539,8 +584,14 @@ export function createTelegramBotApp(
         )
       );
 
-      const sent = await ctx.reply(preview, previewReplyOptions);
-      if (financialSavingEnabled) {
+      const parsedHasFinancialData = hasFinancialData(parsed);
+      const sent = await ctx.reply(
+        preview,
+        parsedHasFinancialData
+          ? previewReplyOptions
+          : { parse_mode: "HTML" as const }
+      );
+      if (financialSavingEnabled && parsedHasFinancialData) {
         await telegramDraftRepository!.save({
           telegramUserId,
           chatId: String(ctx.chat.id),
@@ -616,7 +667,7 @@ export function formatBudgetMessagePreview(
       clarificationLines.length
         ? `\n<b>Осталось уточнить:</b>\n${clarificationLines.join("\n")}`
         : " Напишите сумму, валюту и назначение точнее.",
-      `\n${previewWarning(options)}`
+      "\nНичего не записано. Пришлите сумму, валюту и назначение одним сообщением."
     ].join("");
   }
 
@@ -681,7 +732,11 @@ function buildBudgetMessagePreview(
     sections.push(["<b>Осталось уточнить:</b>", ...clarifications].join("\n"));
   }
 
-  sections.push("<b>Всё совпало?</b> Напишите «всё верно» или просто скажите, что поправить.");
+  sections.push(
+    clarifications.length
+      ? "<b>Сначала уточним эти пункты.</b> Ответьте на это сообщение обычным текстом. После исправленного черновика можно будет написать «всё верно»."
+      : "<b>Всё совпало?</b> Напишите «всё верно» или просто скажите, что поправить."
+  );
 
   const summary = formatBudgetPreviewSummary(options);
   if (summary) {
@@ -1000,13 +1055,21 @@ function formatSaveReceipt(result: {
 function userFacingSaveError(error: unknown): string | null {
   if (!(error instanceof Error)) return null;
   if (
-    /^(Сначала |Реальная запись|В черновике|Дата общего остатка|Операция попадает|Этот черновик старше)/.test(
+    /^(Сначала |Реальная запись|В черновике|Дата общего остатка|Операция попадает|Этот черновик старше|Все остатки|Для каждого|Один кошелёк)/.test(
       error.message
     )
   ) {
     return `${error.message} Ничего не записано.`;
   }
   return null;
+}
+
+function hasFinancialData(parsed: ParsedBudgetMessageDraft): boolean {
+  return Boolean(
+    parsed.transactions.length ||
+      parsed.debtOperations.length ||
+      parsed.balanceObservations.length
+  );
 }
 
 async function cleanupSavedTelegramMessages(
@@ -1027,11 +1090,7 @@ async function cleanupSavedTelegramMessages(
     } catch (error: unknown) {
       console.error(
         "Telegram post-save cleanup failed",
-        JSON.stringify({
-          chatId: String(chatId),
-          messageId,
-          error: error instanceof Error ? error.message : "unknown error"
-        })
+        error instanceof Error ? error.message : "unknown error"
       );
     }
   }
@@ -1272,6 +1331,36 @@ function collectClarificationRequests(
         );
       }
     }
+  }
+
+  const observationDates = new Set(
+    parsed.balanceObservations.map((observation) => observation.occurredOn)
+  );
+  if (observationDates.size > 1) {
+    requests.push("• Остатки по кошелькам должны относиться к одной дате.");
+  }
+
+  const walletCurrencies = new Set<string>();
+  for (const observation of parsed.balanceObservations) {
+    const label = `${formatAmount(observation.amount)} ${observation.currency}`;
+    if (parsed.balanceObservations.length > 1 && !observation.account) {
+      requests.push(`• Остаток ${label} — укажите кошелёк.`);
+    }
+    if (includeDetails) {
+      for (const ambiguity of observation.ambiguities) {
+        requests.push(
+          `• Остаток ${label} — ${escapeTelegramHtml(normalizeText(ambiguity))}`
+        );
+      }
+    }
+    if (!observation.account) continue;
+    const key = `${observation.account.toLocaleLowerCase("ru-RU")}\u0000${observation.currency}`;
+    if (walletCurrencies.has(key)) {
+      requests.push(
+        `• Для «${escapeTelegramHtml(observation.account)}» в ${escapeTelegramHtml(observation.currency)} указано несколько сумм. Скажите, объединить их или назвать счета отдельно.`
+      );
+    }
+    walletCurrencies.add(key);
   }
 
   if (includeDetails) {

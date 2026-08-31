@@ -87,7 +87,7 @@ test("formats income before expenses while keeping each group stable", () => {
   assert.doesNotMatch(preview, /Б1\.|Ещё вижу остаток|Держу его отдельно/);
   assert.match(
     preview,
-    /<b>Всё совпало\?<\/b> Напишите «всё верно» или просто скажите, что поправить\./
+    /<b>Сначала уточним эти пункты\.<\/b>/
   );
   assert.doesNotMatch(preview, /для всех счёт Вьетнамский счёт/);
   assert.match(preview, /в Notion ничего не записано/);
@@ -284,6 +284,52 @@ test("shows several wallet balances separately and sums them once", () => {
   assert.match(preview, /• Вьетнамский счёт · <b>2[  ]500[  ]000 VND<\/b> · 08\.08\.2026/);
   assert.match(preview, /<b>Общий остаток:<\/b> <b>600 USD<\/b>/);
   assert.doesNotMatch(preview, /Б[12]\./);
+});
+
+test("shows wallet ambiguities and blocks confirmation for repeated account rows", () => {
+  const preview = formatBudgetMessagePreview({
+    transactions: [],
+    debtOperations: [],
+    balanceObservations: [
+      {
+        amount: 2_000_000,
+        currency: "VND",
+        occurredOn: "2026-08-08",
+        account: "Вьетнамский счёт",
+        confidence: 0.7,
+        ambiguities: ["Непонятно, один это счёт или два"]
+      },
+      {
+        amount: 400_000,
+        currency: "VND",
+        occurredOn: "2026-08-08",
+        account: "Вьетнамский счёт",
+        confidence: 0.7,
+        ambiguities: []
+      }
+    ],
+    ambiguities: []
+  });
+
+  assert.match(preview, /Остаток 2[  ]000[  ]000 VND — Непонятно, один это счёт или два/);
+  assert.match(preview, /указано несколько сумм\. Скажите, объединить их или назвать счета отдельно/);
+  assert.match(preview, /<b>Сначала уточним эти пункты\.<\/b>/);
+  assert.doesNotMatch(preview, /<b>Всё совпало\?<\/b>/);
+});
+
+test("does not invite confirmation for a non-financial message", () => {
+  const preview = formatBudgetMessagePreview(
+    {
+      transactions: [],
+      debtOperations: [],
+      balanceObservations: [],
+      ambiguities: []
+    },
+    { savingEnabled: true }
+  );
+
+  assert.match(preview, /Ничего не записано/);
+  assert.doesNotMatch(preview, /всё верно|запишу подтверждённые данные/i);
 });
 
 test("keeps complete clarification text when the preview fits Telegram", () => {
@@ -960,6 +1006,102 @@ test("Telegram persists a normalized draft and saves it once on confirmation", a
   assert.deepEqual(deleted, [10, 1, 11]);
   assert.deepEqual(trashed, ["draft-1"]);
   assert.match(String(sent[1]?.text), /Стартовый остаток записан/);
+});
+
+test("Telegram refreshes an unresolved wallet draft instead of calling Notion", async () => {
+  const parsed: ParsedBudgetMessageDraft = {
+    transactions: [],
+    debtOperations: [],
+    balanceObservations: [
+      { amount: 2_000_000, currency: "VND", occurredOn: "2026-08-08", account: "Вьетнамский счёт", confidence: 0.8, ambiguities: [] },
+      { amount: 400_000, currency: "VND", occurredOn: "2026-08-08", account: "Вьетнамский счёт", confidence: 0.8, ambiguities: [] }
+    ],
+    ambiguities: []
+  };
+  let stored: StoredTelegramDraft | null = {
+    pageId: "draft-old",
+    telegramUserId: "100001",
+    chatId: "100001",
+    sourceMessageId: 10,
+    previewMessageId: 1,
+    serializedDraft: JSON.stringify({
+      parsed,
+      previewMessageIds: [1],
+      acceptBalanceMismatch: false
+    }),
+    expiresAt: "2099-01-01T00:00:00.000Z"
+  };
+  const trashed: string[] = [];
+  let saveCalls = 0;
+  const bot = createTelegramBotApp(
+    loadConfig({
+      TELEGRAM_BOT_TOKEN: "123456:test-token",
+      TELEGRAM_ALLOWED_USER_IDS: "100001"
+    }),
+    {
+      parser: { async parse() { return parsed; }, async revise() { return parsed; } },
+      currencyConverter: passthroughCurrencyConverter,
+      userSettingsRepository: createUserSettingsRepository(),
+      telegramDraftRepository: {
+        async save(value) {
+          stored = { ...value, pageId: `draft-${value.previewMessageId}` };
+          return stored;
+        },
+        async find(chatId, previewMessageId) {
+          return stored?.chatId === chatId && stored.previewMessageId === previewMessageId
+            ? stored
+            : null;
+        },
+        async trash(pageId) { trashed.push(pageId); }
+      },
+      financialSaveService: {
+        async previewCurrentBalance() { return null; },
+        async save() {
+          saveCalls += 1;
+          throw new Error("must not save an unresolved draft");
+        }
+      }
+    }
+  );
+  const sent: Array<Record<string, unknown>> = [];
+  bot.api.config.use((async (_previous: unknown, method: string, payload: Record<string, unknown>) => {
+    if (method === "getMe") return { ok: true, result: { id: 123456, is_bot: true, first_name: "Bot", username: "bot" } };
+    if (method === "sendChatAction") return { ok: true, result: true };
+    if (method === "sendMessage") {
+      sent.push(payload);
+      return { ok: true, result: { message_id: 2, date: 2, chat: { id: 100001, type: "private", first_name: "Owner" }, text: payload.text } };
+    }
+    throw new Error(`Unexpected Telegram method: ${method}`);
+  }) as Parameters<typeof bot.api.config.use>[0]);
+  await bot.init();
+
+  const originalPreview = formatBudgetMessagePreview(parsed, {
+    savingEnabled: true
+  });
+  await bot.handleUpdate({
+    update_id: 102,
+    message: {
+      message_id: 11,
+      date: 2,
+      chat: { id: 100001, type: "private", first_name: "Owner" },
+      from: { id: 100001, is_bot: false, first_name: "Owner" },
+      text: "всё верно",
+      reply_to_message: {
+        message_id: 1,
+        date: 1,
+        chat: { id: 100001, type: "private", first_name: "Owner" },
+        from: { id: 123456, is_bot: true, first_name: "Bot" },
+        text: originalPreview,
+        reply_to_message: undefined
+      }
+    }
+  });
+
+  assert.equal(saveCalls, 0);
+  assert.match(String(sent[0]?.text), /объединить их или назвать счета отдельно/);
+  assert.doesNotMatch(String(sent[0]?.text), /Не удалось завершить запись в Notion/);
+  assert.deepEqual(trashed, ["draft-old"]);
+  assert.equal(stored?.previewMessageId, 2);
 });
 
 test("Telegram writes a normalized fallback and keeps messages when Notion fails", async () => {

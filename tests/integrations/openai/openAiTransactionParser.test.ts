@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeParsedBudgetMessage } from "../../../src/integrations/openai/openAiTransactionParser.js";
+import {
+  normalizeExplicitBalanceMerge,
+  normalizeParsedBudgetMessage
+} from "../../../src/integrations/openai/openAiTransactionParser.js";
 
 test("normalizes a multi-transaction message without merging its operations", () => {
   const parsed = normalizeParsedBudgetMessage({
@@ -142,6 +145,93 @@ test("drops an invented no-op transfer between the same account", () => {
   });
 
   assert.deepEqual(parsed.transactions, []);
+});
+
+test("merges repeated wallet rows after an explicit single-account correction", () => {
+  const parsed = normalizeParsedBudgetMessage({
+    transactions: [],
+    debtOperations: [],
+    balanceObservations: [
+      {
+        amount: 2_000_000,
+        currency: "VND",
+        occurredOn: "2026-08-08",
+        account: "Вьетнамский счёт",
+        confidence: 0.9,
+        ambiguities: []
+      },
+      {
+        amount: 400_000,
+        currency: "VND",
+        occurredOn: "2026-08-08",
+        account: "Вьетнамский счёт",
+        confidence: 0.8,
+        ambiguities: []
+      },
+      {
+        amount: 50,
+        currency: "USD",
+        occurredOn: "2026-08-08",
+        account: "Crypto",
+        confidence: 1,
+        ambiguities: []
+      }
+    ],
+    ambiguities: []
+  });
+
+  const merged = normalizeExplicitBalanceMerge(
+    parsed,
+    "Пусть будет один счёт"
+  );
+
+  assert.deepEqual(
+    merged.balanceObservations.map(({ amount, currency, account }) => ({
+      amount,
+      currency,
+      account
+    })),
+    [
+      {
+        amount: 2_400_000,
+        currency: "VND",
+        account: "Вьетнамский счёт"
+      },
+      { amount: 50, currency: "USD", account: "Crypto" }
+    ]
+  );
+});
+
+test("does not merge repeated wallet rows without explicit approval", () => {
+  const parsed = normalizeParsedBudgetMessage({
+    transactions: [],
+    debtOperations: [],
+    balanceObservations: [
+      {
+        amount: 2_000_000,
+        currency: "VND",
+        occurredOn: "2026-08-08",
+        account: "Вьетнамский счёт",
+        confidence: 0.9,
+        ambiguities: []
+      },
+      {
+        amount: 400_000,
+        currency: "VND",
+        occurredOn: "2026-08-08",
+        account: "Вьетнамский счёт",
+        confidence: 0.8,
+        ambiguities: []
+      }
+    ],
+    ambiguities: []
+  });
+
+  assert.equal(
+    normalizeExplicitBalanceMerge(parsed, "Проверь суммы")
+      .balanceObservations.length,
+    2
+  );
 });
 
 test("keeps four debt actions separate from income and expense", () => {

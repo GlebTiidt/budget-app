@@ -241,7 +241,7 @@ export function createOpenAiTransactionParser(
         throw new Error("Preview text and revision instruction are required.");
       }
 
-      return requestBudgetMessage(
+      const revised = await requestBudgetMessage(
         client,
         options.model,
         "revise",
@@ -254,8 +254,65 @@ export function createOpenAiTransactionParser(
         options.reasoningEffort,
         options.onTokenUsage
       );
+      return normalizeExplicitBalanceMerge(revised, trimmedInstruction);
     }
   };
+}
+
+export function normalizeExplicitBalanceMerge(
+  parsed: ParsedBudgetMessageDraft,
+  instruction: string
+): ParsedBudgetMessageDraft {
+  if (!requestsSingleBalanceAccount(instruction)) {
+    return parsed;
+  }
+
+  const merged: ParsedBalanceObservationDraft[] = [];
+  const positions = new Map<string, number>();
+  for (const observation of parsed.balanceObservations) {
+    if (!observation.account) {
+      merged.push(observation);
+      continue;
+    }
+    const key = [
+      observation.occurredOn,
+      observation.account.toLocaleLowerCase("ru-RU"),
+      observation.currency
+    ].join("\u0000");
+    const position = positions.get(key);
+    if (position === undefined) {
+      positions.set(key, merged.length);
+      merged.push(observation);
+      continue;
+    }
+
+    const previous = merged[position]!;
+    merged[position] = {
+      ...previous,
+      amount: previous.amount + observation.amount,
+      confidence: Math.min(previous.confidence, observation.confidence),
+      ambiguities: [...new Set([
+        ...previous.ambiguities,
+        ...observation.ambiguities
+      ])]
+    };
+  }
+
+  return merged.length === parsed.balanceObservations.length
+    ? parsed
+    : { ...parsed, balanceObservations: merged };
+}
+
+function requestsSingleBalanceAccount(instruction: string): boolean {
+  const normalized = instruction
+    .toLocaleLowerCase("ru-RU")
+    .replaceAll("ё", "е");
+  return (
+    /(?:^|\s)(?:один|общий)\s+(?:счет|кошелек)(?:\s|[.,!?]|$)/.test(
+      normalized
+    ) ||
+    /(?:^|\s)объедин(?:и|ить|яем|ите|им)(?:\s|[.,!?]|$)/.test(normalized)
+  );
 }
 
 async function requestBudgetMessage(

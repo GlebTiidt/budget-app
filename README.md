@@ -22,7 +22,7 @@ Personal budget app with an owner-only Telegram workflow and confirmed writes in
 2. Telegram adapter parses the message into a budget command.
 3. OpenAI turns informal text into ordered structured drafts and separates debt operations and balance observations from ordinary transactions.
 4. The bot numbers transaction and debt drafts, shows an observed balance once in the summary, keeps debt grouped by counterparty and original currency, and accepts confirmation, correction, or cancellation as a normal text reply.
-5. The application validates each confirmed item, converts it to EUR, and calculates the anchored running balance; pre-anchor history remains analytics-only.
+5. The application validates each confirmed item, converts it to the user's selected base currency (USD for the master account), and calculates the anchored running balance; pre-anchor history remains analytics-only.
 6. Notion integrations write transactions, debt operations, balance observations, and persistent Telegram drafts idempotently.
 7. After a complete save the bot removes the source and temporary confirmation messages, retains a receipt, and keeps a normalized fallback if Notion fails.
 
