@@ -101,6 +101,18 @@ const verificationCases: VerificationCase[] = [
     ]
   },
   {
+    name: "recorded coffee, beer, and snacks stay expenses",
+    input:
+      "Сегодня записывал расходы за вчера: пиво с собой и закуски 210к VND и кофе 55к VND. Сегодня записывал ещё кофе 45к VND.",
+    expectedDirections: { income: 0, expense: 3, transfer: 0 },
+    expectedBalanceObservations: 0,
+    expectedTransactions: [
+      { amount: 210_000, currency: "VND", direction: "expense" },
+      { amount: 55_000, currency: "VND", direction: "expense", category: "Кофешоп" },
+      { amount: 45_000, currency: "VND", direction: "expense", category: "Кофешоп" }
+    ]
+  },
+  {
     name: "subscription expense from crypto wallet",
     input: "Оплатил подписку на сервис 20 USD с криптокошелька",
     expectedDirections: { income: 0, expense: 1, transfer: 0 },

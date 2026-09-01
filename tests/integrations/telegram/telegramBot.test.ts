@@ -530,12 +530,13 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
     /Общий остаток на «Вьетнамский счёт»/
   );
 
-  const replyMarkup = sentMessages[0]?.reply_markup as {
-    force_reply: boolean;
-    input_field_placeholder: string;
-  };
-  assert.equal(replyMarkup.force_reply, true);
-  assert.match(replyMarkup.input_field_placeholder, /для всех счёт Карта/);
+  const initialReplyMarkup = JSON.stringify(sentMessages[0]?.reply_markup);
+  assert.match(initialReplyMarkup, /preview:correct/);
+  assert.doesNotMatch(
+    initialReplyMarkup,
+    /preview:confirm/,
+    "confirmation stays hidden while the draft has unresolved fields"
+  );
 
   await bot.handleUpdate({
     update_id: 2,
@@ -575,6 +576,8 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
   assert.match(String(sentMessages[1]?.text), /1\. Доход.*Карта/);
   assert.doesNotMatch(String(sentMessages[1]?.text), /2\. Расход/);
   assert.doesNotMatch(String(sentMessages[1]?.text), /Б1\./);
+  assert.match(JSON.stringify(sentMessages[1]?.reply_markup), /preview:confirm/);
+  assert.match(JSON.stringify(sentMessages[1]?.reply_markup), /preview:correct/);
 
   await bot.handleUpdate({
     update_id: 3,
@@ -639,6 +642,64 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
   assert.equal(sentMessages.length, 4);
   assert.equal(revisionCalls.length, 1, "whole cancellation should be deterministic");
   assert.match(String(sentMessages[3]?.text), /Весь черновик отменён/);
+});
+
+test("Telegram Correct button opens a normal text correction reply", async () => {
+  const parsed: ParsedBudgetMessageDraft = {
+    transactions: [{ ...createDraft("expense"), account: "Карта" }],
+    debtOperations: [],
+    balanceObservations: [],
+    ambiguities: []
+  };
+  const bot = createTelegramBotApp(
+    loadConfig({
+      TELEGRAM_BOT_TOKEN: "123456:test-token",
+      TELEGRAM_ALLOWED_USER_IDS: "100001"
+    }),
+    {
+      parser: {
+        async parse() { return parsed; },
+        async revise() { throw new Error("not used"); }
+      },
+      currencyConverter: passthroughCurrencyConverter,
+      userSettingsRepository: createUserSettingsRepository()
+    }
+  );
+  const sent: Array<Record<string, unknown>> = [];
+  bot.api.config.use((async (
+    _previous: unknown,
+    method: string,
+    payload: Record<string, unknown>
+  ) => {
+    if (method === "getMe") {
+      return { ok: true, result: { id: 123456, is_bot: true, first_name: "Bot", username: "bot" } };
+    }
+    if (method === "sendChatAction" || method === "answerCallbackQuery") {
+      return { ok: true, result: true };
+    }
+    if (method === "sendMessage") {
+      sent.push(payload);
+      return { ok: true, result: { message_id: sent.length, date: 1, chat: { id: 100001, type: "private", first_name: "Owner" }, text: payload.text } };
+    }
+    throw new Error(`Unexpected Telegram method: ${method}`);
+  }) as Parameters<typeof bot.api.config.use>[0]);
+  await bot.init();
+
+  await bot.handleUpdate({ update_id: 20, message: { message_id: 30, date: 1, chat: { id: 100001, type: "private", first_name: "Owner" }, from: { id: 100001, is_bot: false, first_name: "Owner" }, text: "Потратил 50 USD с карты" } });
+  assert.match(JSON.stringify(sent[0]?.reply_markup), /preview:correct/);
+
+  await bot.handleUpdate({ update_id: 21, callback_query: { id: "correct-1", from: { id: 100001, is_bot: false, first_name: "Owner" }, chat_instance: "chat-instance", data: "preview:correct", message: { message_id: 1, date: 1, chat: { id: 100001, type: "private", first_name: "Owner" }, text: String(sent[0]?.text) } } });
+
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1]?.text, sent[0]?.text);
+  assert.equal(
+    (sent[1]?.reply_markup as { force_reply?: boolean }).force_reply,
+    true
+  );
+  assert.match(
+    String((sent[1]?.reply_markup as { input_field_placeholder?: string }).input_field_placeholder),
+    /для всех счёт Карта/
+  );
 });
 
 test("Telegram requires onboarding currency and keeps it in user settings", async () => {
@@ -987,6 +1048,7 @@ test("Telegram persists a normalized draft and saves it once on confirmation", a
   bot.api.config.use((async (_previous: unknown, method: string, payload: Record<string, unknown>) => {
     if (method === "getMe") return { ok: true, result: { id: 123456, is_bot: true, first_name: "Bot", username: "bot" } };
     if (method === "sendChatAction") return { ok: true, result: true };
+    if (method === "answerCallbackQuery") return { ok: true, result: true };
     if (method === "deleteMessage") { deleted.push(Number(payload.message_id)); return { ok: true, result: true }; }
     if (method === "sendMessage") {
       sent.push(payload);
@@ -996,14 +1058,16 @@ test("Telegram persists a normalized draft and saves it once on confirmation", a
   }) as Parameters<typeof bot.api.config.use>[0]);
   await bot.init();
   await bot.handleUpdate({ update_id: 100, message: { message_id: 10, date: 1, chat: { id: 100001, type: "private", first_name: "Owner" }, from: { id: 100001, is_bot: false, first_name: "Owner" }, text: "Остаток 132 EUR" } });
-  assert.match(String(sent[0]?.text), /запишу подтверждённые данные в Notion/);
+  assert.match(String(sent[0]?.text), /После подтверждения «Всё верно»/);
+  assert.match(JSON.stringify(sent[0]?.reply_markup), /preview:confirm/);
+  assert.match(JSON.stringify(sent[0]?.reply_markup), /preview:correct/);
   assert.ok(stored);
   const persistedDraft = stored as StoredTelegramDraft;
   assert.doesNotMatch(persistedDraft.serializedDraft, /Остаток 132 EUR/);
 
-  await bot.handleUpdate({ update_id: 101, message: { message_id: 11, date: 2, chat: { id: 100001, type: "private", first_name: "Owner" }, from: { id: 100001, is_bot: false, first_name: "Owner" }, text: "всё верно", reply_to_message: { message_id: 1, date: 1, chat: { id: 100001, type: "private", first_name: "Owner" }, from: { id: 123456, is_bot: true, first_name: "Bot" }, text: String(sent[0]?.text), reply_to_message: undefined } } });
+  await bot.handleUpdate({ update_id: 101, callback_query: { id: "confirm-1", from: { id: 100001, is_bot: false, first_name: "Owner" }, chat_instance: "chat-instance", data: "preview:confirm", message: { message_id: 1, date: 1, chat: { id: 100001, type: "private", first_name: "Owner" }, text: String(sent[0]?.text) } } });
   assert.equal(saveInputs.length, 1);
-  assert.deepEqual(deleted, [10, 1, 11]);
+  assert.deepEqual(deleted, [10, 1]);
   assert.deepEqual(trashed, ["draft-1"]);
   assert.match(String(sent[1]?.text), /Стартовый остаток записан/);
 });

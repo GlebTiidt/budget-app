@@ -102,16 +102,18 @@ Exit condition: one verified transaction can be written exactly once through the
 - [x] Rerun the live parser after independent numeric debt labels and prompt-cache `v3`: all 12 parser cases, both transaction revisions, and `долг 1: счёт Сбережения` passed; 15 requests used 22,499 total tokens with 12,232 cached input tokens.
 - [x] Rerun the live parser for the multi-wallet contract: all 13 parse cases passed, including a three-wallet snapshot; after adding the deterministic same-account-transfer guard, all four `v5` revision fixtures passed, including wallet correction, debt numbering, mass account assignment, and a real account transfer.
 - [x] Add deterministic fallback/error messages for incomplete or ambiguous input; missing transaction amount or currency remains explicit instead of being guessed.
-- [x] Show all transaction and debt drafts from one input in one Telegram preview; number each separate section from `1` without a `Д` prefix, address debt corrections as `долг N`, and do not use a permanent inline action grid.
+- [x] Show all transaction and debt drafts from one input in one Telegram preview; number each separate section from `1` without a `Д` prefix, address debt corrections as `долг N`, and use native inline actions for confirmation and correction.
 - [x] Group ordinary Telegram preview rows as income, then expense, then personal transfer while preserving relative order within each group; keep clarification numbers aligned with the displayed rows.
 - [x] Split the converted Telegram summary into readable paragraphs for income and expense, debts owed by the user, debts owed to the user, and total balance; show `Общий остаток` last.
 - [x] Rewrite the combined preview in conversational Russian: show an explicit balance observation only once as `Общий остаток`, without a separate `Б1` row or account label, ask whether everything matches, and present corrections as natural examples instead of system instructions.
 - [x] Render preview headings, amount-plus-currency values, and categories in bold with safely escaped Telegram HTML.
 - [x] Ask for every missing amount, currency, category, or account in one numbered clarification block.
 - [x] Accept ordinary reply text for whole-preview confirmation, field corrections, and numbered cancellation; return a revised preview without writing to Notion.
+- [x] Show native `Всё верно` and `Исправить` buttons on a complete preview, keep confirmation hidden while fields remain unresolved, open a Force Reply correction from the button, and preserve text confirmation as a fallback.
 - [x] Apply sequential `тоже` replies through visible items, prefer a supported final destination account, and avoid duplicate missing-field questions.
 - [x] Recognize a correction that describes `Crypto → Вьетнамский счёт` as a separate personal transfer instead of overwriting the income account.
 - [x] Implement persistent Confirm, Correct, and Cancel state for the real save flow using normalized Notion drafts without raw Telegram text.
+- [x] Harden purchase direction in prompt-cache `v6`: coffee, beer, takeaway drinks, snacks, groceries, and meals remain expenses even when recorded today for yesterday. The live suite passed all 14 parse cases and all 4 revision cases; 18 requests used 28,508 total tokens with 15,769 cached input tokens.
 - [ ] Implement a proposed-new-category state with Create, Use `Другое`, and Cancel actions.
 - [ ] Append a confirmed category to Notion while preserving all existing select options and rejecting duplicates.
 
@@ -246,7 +248,7 @@ Exit condition: an invited user has an isolated budget and custom categories wit
 
 ## Current Gate — Confirmed Notion Save
 
-The owner-only save flow is deployed and locally verified, and the live Notion schema uses generic base-currency fields with the owner profile set to USD. On 2026-08-31 the owner explicitly reset the ledger: the two 2026-08-08 wallet observations and their `267.11 USD` settings anchor were moved to Notion trash, all active transaction, debt, draft, observation, and settings rows were verified empty, and a new `1,587,104 VND` source observation was created for `Вьетнамский счёт` as a `60.31 USD` opening anchor using the official historical rate `0.000038 USD/VND`. Deployment `dpl_6NmJLyQXUoW61QwHgf627QYsXUTE` prevents unresolved or repeated wallet rows from reaching Notion and deterministically merges same-account rows only after explicit approval. The Telegram gate remains incomplete until the next real operation exercises the revised interaction and post-save message cleanup.
+The owner-only save flow is deployed and locally verified, and the live Notion schema uses generic base-currency fields with the owner profile set to USD. On 2026-08-31 the owner explicitly reset the ledger: the two 2026-08-08 wallet observations and their `267.11 USD` settings anchor were moved to Notion trash, all active transaction, debt, draft, observation, and settings rows were verified empty, and a new `1,587,104 VND` source observation was created for `Вьетнамский счёт` as a `60.31 USD` opening anchor using the official historical rate `0.000038 USD/VND`. Deployment `dpl_6NmJLyQXUoW61QwHgf627QYsXUTE` prevents unresolved or repeated wallet rows from reaching Notion and deterministically merges same-account rows only after explicit approval. Production deployment `dpl_BeMqSrj37keqzxUoXShDGXxA4kGr` adds native preview confirmation/correction buttons and purchase-direction prompt-cache `v6`; it passed 79 local tests, typecheck, build, the complete 18-request live parser suite, and the deployed webhook health check. The Telegram gate remains incomplete until the next real operation exercises the revised interaction and post-save message cleanup.
 
 ### Owner Smoke Test
 
@@ -276,6 +278,7 @@ The owner-only save flow is deployed and locally verified, and the live Notion s
 
 - [x] Fix the observed wallet-clarification UX, false Notion error, empty-draft persistence, and explicit one-account merge; pass 78 local tests plus typecheck/build and deploy `dpl_6NmJLyQXUoW61QwHgf627QYsXUTE`.
 - [x] Remove local macOS metadata and one-off reset/runtime scripts, strip chat/message identifiers and fallback paths from operational error logs, and verify that Notion Trash has no remaining pages.
+- [x] Add native preview confirmation/correction buttons, harden recorded purchases as expenses, pass 79 local tests plus typecheck/build and the 18-request live parser suite, verify the affected live ledger rows already have expense direction, and deploy `dpl_BeMqSrj37keqzxUoXShDGXxA4kGr`.
 - [ ] Inspect Vercel runtime logs for webhook/OpenAI errors and confirm they contain no raw transaction text or secrets.
 - [ ] Fix observed parsing or UX issues, rerun local verification, redeploy, and repeat only the failed smoke-test cases.
 - [ ] Mark confirmed save behavior verified only after the real Telegram smoke test passes.

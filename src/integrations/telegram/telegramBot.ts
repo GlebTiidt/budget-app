@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, type Context } from "grammy";
 import { createMasterBudgetSaveService } from "../../app/masterBudgetSaveService.js";
 import {
   ACCOUNTS,
@@ -41,6 +41,7 @@ import { createNotionMasterLedgerRepository } from "../notion/notionMasterLedger
 import { createNotionMasterOpeningBalanceRepository } from "../notion/notionMasterOpeningBalanceRepository.js";
 import {
   createNotionTelegramDraftRepository,
+  type StoredTelegramDraft,
   type TelegramDraftRepository
 } from "../notion/notionTelegramDraftRepository.js";
 
@@ -76,22 +77,22 @@ const TELEGRAM_MESSAGE_LIMIT = 4096;
 const PREVIEW_WARNING =
   "Пока это только черновик — в Notion ничего не записано.";
 const SAVE_ENABLED_WARNING =
-  "Это черновик. После ответа «всё верно» я запишу подтверждённые данные в Notion.";
+  "Это черновик. После подтверждения «Всё верно» я запишу данные в Notion.";
 const CURRENCY_SEARCH_PROMPT =
   "Введите код или название валюты отдельным сообщением.";
+const PREVIEW_CONFIRM_CALLBACK = "preview:confirm";
+const PREVIEW_CORRECT_CALLBACK = "preview:correct";
+const PREVIEW_CORRECTION_PROMPT =
+  "Напишите, что исправить. Например: «3: валюта USD», «для всех счёт Карта» или «отмени 4».";
 const currencySearchReplyMarkup = {
   force_reply: true as const,
   selective: true,
   input_field_placeholder: "Например: EUR, евро или донг"
 };
-const previewReplyMarkup = {
+const previewCorrectionReplyMarkup = {
   force_reply: true as const,
   selective: true,
   input_field_placeholder: "Например: для всех счёт Карта"
-};
-const previewReplyOptions = {
-  parse_mode: "HTML" as const,
-  reply_markup: previewReplyMarkup
 };
 const telegramCommands = [
   { command: "start", description: "Начать работу" },
@@ -185,6 +186,138 @@ export function createTelegramBotApp(
   const isSavingEnabledFor = (telegramUserId: string) =>
     savingEnabled && telegramUserId === config.masterTelegramUserId;
   const bot = new Bot(config.telegramBotToken);
+
+  const confirmStoredPreview = async (
+    ctx: Context,
+    telegramUserId: string,
+    settings: UserSettings,
+    storedDraft: StoredTelegramDraft,
+    storedPayload: StoredBudgetDraftPayload,
+    confirmationMessageId?: number
+  ): Promise<void> => {
+    if (!ctx.chat) {
+      throw new Error("Telegram confirmation chat is missing.");
+    }
+    const chatId = String(ctx.chat.id);
+    const unresolved = collectClarificationRequests(
+      storedPayload.parsed,
+      orderTransactionsForPreview(storedPayload.parsed.transactions),
+      true
+    );
+    if (unresolved.length) {
+      const sent = await ctx.reply(
+        await formatUserBudgetMessagePreview(
+          storedPayload.parsed,
+          settings.baseCurrency,
+          currencyConverter,
+          true,
+          await previewPersistentBalance(
+            true,
+            financialSaveService,
+            telegramUserId,
+            chatId,
+            storedDraft.sourceMessageId,
+            settings.baseCurrency,
+            storedPayload.parsed
+          )
+        ),
+        createPreviewReplyOptions(storedPayload.parsed)
+      );
+      await telegramDraftRepository!.save({
+        telegramUserId,
+        chatId,
+        sourceMessageId: storedDraft.sourceMessageId,
+        previewMessageId: sent.message_id,
+        serializedDraft: serializeStoredBudgetDraft({
+          ...storedPayload,
+          previewMessageIds: [
+            ...new Set([...storedPayload.previewMessageIds, sent.message_id])
+          ]
+        }),
+        expiresAt: storedDraft.expiresAt
+      });
+      await telegramDraftRepository!.trash(storedDraft.pageId);
+      return;
+    }
+
+    let result;
+    try {
+      result = await financialSaveService!.save({
+        telegramUserId,
+        chatId,
+        sourceMessageId: storedDraft.sourceMessageId,
+        baseCurrency: settings.baseCurrency,
+        parsed: storedPayload.parsed,
+        acceptBalanceMismatch: storedPayload.acceptBalanceMismatch
+      });
+    } catch (error: unknown) {
+      const friendlyError = userFacingSaveError(error);
+      console.error(
+        "Telegram confirmed budget save failed",
+        error instanceof Error ? error.message : "unknown error"
+      );
+      if (!friendlyError) {
+        try {
+          await notionWriteFailureRepository.save({
+            telegramUserId,
+            chatId,
+            sourceMessageId: storedDraft.sourceMessageId,
+            failedAt: new Date().toISOString(),
+            errorMessage:
+              error instanceof Error ? error.message : "unknown error",
+            normalizedDraft: storedPayload.parsed
+          });
+          console.error("Normalized Notion write fallback created");
+        } catch (fallbackError: unknown) {
+          console.error(
+            "Normalized Notion write fallback failed",
+            fallbackError instanceof Error
+              ? fallbackError.message
+              : "unknown error"
+          );
+        }
+      }
+      await ctx.reply(
+        friendlyError ??
+          "Не удалось завершить запись в Notion. Черновик и сообщения сохранены — можно нажать «Всё верно» ещё раз после проверки."
+      );
+      return;
+    }
+
+    if (result.status === "balance_mismatch") {
+      const warning = formatBalanceMismatch(result);
+      const sent = await ctx.reply(
+        warning,
+        createPreviewReplyOptions(storedPayload.parsed)
+      );
+      await telegramDraftRepository!.save({
+        telegramUserId,
+        chatId,
+        sourceMessageId: storedDraft.sourceMessageId,
+        previewMessageId: sent.message_id,
+        serializedDraft: serializeStoredBudgetDraft({
+          ...storedPayload,
+          previewMessageIds: [
+            ...new Set([...storedPayload.previewMessageIds, sent.message_id])
+          ],
+          acceptBalanceMismatch: true
+        }),
+        expiresAt: storedDraft.expiresAt
+      });
+      await telegramDraftRepository!.trash(storedDraft.pageId);
+      return;
+    }
+
+    await telegramDraftRepository!.trash(storedDraft.pageId);
+    await cleanupSavedTelegramMessages(
+      bot,
+      ctx.chat.id,
+      storedDraft.sourceMessageId,
+      storedPayload.previewMessageIds,
+      confirmationMessageId
+    );
+    await ctx.reply(formatSaveReceipt(result));
+  };
 
   bot.use(async (ctx, next) => {
     if (!isTelegramUserAllowed(ctx.from?.id, config.telegramAllowedUserIds)) {
@@ -289,6 +422,114 @@ export function createTelegramBotApp(
     );
   });
 
+  bot.callbackQuery(PREVIEW_CONFIRM_CALLBACK, async (ctx) => {
+    await ctx.answerCallbackQuery({ text: "Проверяю и сохраняю…" });
+    const message = ctx.callbackQuery.message;
+    if (!message) {
+      await ctx.reply("Не нашёл сообщение с черновиком. Пришлите операцию ещё раз.");
+      return;
+    }
+
+    const telegramUserId = requireTelegramUserId(ctx.from?.id);
+    const financialSavingEnabled = isSavingEnabledFor(telegramUserId);
+    const settings =
+      await userSettingsRepository.findByTelegramUserId(telegramUserId);
+    if (!settings) {
+      await ctx.reply(formatCurrencyOnboarding(), {
+        parse_mode: "HTML",
+        reply_markup: currencySearchReplyMarkup
+      });
+      return;
+    }
+
+    if (!financialSavingEnabled) {
+      await ctx.reply(
+        "✅ Все пункты проверены. Это preview — в Notion ничего не записано."
+      );
+      return;
+    }
+
+    const storedDraft = await telegramDraftRepository!.find(
+      String(message.chat.id),
+      message.message_id
+    );
+    if (!storedDraft) {
+      await ctx.reply(
+        "Этот черновик уже закрыт или устарел. Пришлите финансовое сообщение ещё раз."
+      );
+      return;
+    }
+    if (Date.parse(storedDraft.expiresAt) <= Date.now()) {
+      await telegramDraftRepository!.trash(storedDraft.pageId);
+      await ctx.reply(
+        "Срок этого черновика истёк. Пришлите финансовое сообщение ещё раз."
+      );
+      return;
+    }
+
+    await confirmStoredPreview(
+      ctx,
+      telegramUserId,
+      settings,
+      storedDraft,
+      deserializeStoredBudgetDraft(storedDraft.serializedDraft)
+    );
+  });
+
+  bot.callbackQuery(PREVIEW_CORRECT_CALLBACK, async (ctx) => {
+    await ctx.answerCallbackQuery({ text: PREVIEW_CORRECTION_PROMPT });
+    const message = ctx.callbackQuery.message;
+    if (!message || !("text" in message) || typeof message.text !== "string") {
+      await ctx.reply("Не нашёл сообщение с черновиком. Пришлите операцию ещё раз.");
+      return;
+    }
+
+    const telegramUserId = requireTelegramUserId(ctx.from?.id);
+    const financialSavingEnabled = isSavingEnabledFor(telegramUserId);
+    const storedDraft = financialSavingEnabled
+      ? await telegramDraftRepository!.find(
+          String(message.chat.id),
+          message.message_id
+        )
+      : null;
+    if (financialSavingEnabled && !storedDraft) {
+      await ctx.reply(
+        "Этот черновик уже закрыт или устарел. Пришлите финансовое сообщение ещё раз."
+      );
+      return;
+    }
+    if (storedDraft && Date.parse(storedDraft.expiresAt) <= Date.now()) {
+      await telegramDraftRepository!.trash(storedDraft.pageId);
+      await ctx.reply(
+        "Срок этого черновика истёк. Пришлите финансовое сообщение ещё раз."
+      );
+      return;
+    }
+
+    const sent = await ctx.reply(message.text, {
+      reply_markup: previewCorrectionReplyMarkup
+    });
+    if (storedDraft) {
+      const storedPayload = deserializeStoredBudgetDraft(
+        storedDraft.serializedDraft
+      );
+      await telegramDraftRepository!.save({
+        telegramUserId,
+        chatId: String(message.chat.id),
+        sourceMessageId: storedDraft.sourceMessageId,
+        previewMessageId: sent.message_id,
+        serializedDraft: serializeStoredBudgetDraft({
+          ...storedPayload,
+          previewMessageIds: [
+            ...new Set([...storedPayload.previewMessageIds, sent.message_id])
+          ]
+        }),
+        expiresAt: storedDraft.expiresAt
+      });
+      await telegramDraftRepository!.trash(storedDraft.pageId);
+    }
+  });
+
   bot.on("message:text", async (ctx) => {
     try {
       const telegramUserId = requireTelegramUserId(ctx.from?.id);
@@ -335,15 +576,17 @@ export function createTelegramBotApp(
       }
 
       await ctx.replyWithChatAction("typing");
-      const repliedPreview = getRepliedPreviewText(ctx.message.reply_to_message);
-      if (repliedPreview) {
-        const instruction = ctx.message.text.trim();
-        const storedDraft = financialSavingEnabled
+      const repliedMessage = ctx.message.reply_to_message;
+      const repliedPreview = getRepliedPreviewText(repliedMessage);
+      const storedDraft =
+        financialSavingEnabled && repliedMessage?.from?.is_bot
           ? await telegramDraftRepository!.find(
               String(ctx.chat.id),
-              ctx.message.reply_to_message!.message_id
+              repliedMessage.message_id
             )
           : null;
+      if (repliedPreview || storedDraft) {
+        const instruction = ctx.message.text.trim();
         if (financialSavingEnabled && !storedDraft) {
           await ctx.reply(
             "Этот черновик уже закрыт или устарел. Пришлите финансовое сообщение ещё раз."
@@ -363,125 +606,14 @@ export function createTelegramBotApp(
 
         if (isWholePreviewConfirmation(instruction)) {
           if (financialSavingEnabled && storedDraft && storedPayload) {
-            const unresolved = collectClarificationRequests(
-              storedPayload.parsed,
-              orderTransactionsForPreview(storedPayload.parsed.transactions),
-              true
-            );
-            if (unresolved.length) {
-              const sent = await ctx.reply(
-                await formatUserBudgetMessagePreview(
-                  storedPayload.parsed,
-                  settings.baseCurrency,
-                  currencyConverter,
-                  financialSavingEnabled,
-                  await previewPersistentBalance(
-                    financialSavingEnabled,
-                    financialSaveService,
-                    telegramUserId,
-                    String(ctx.chat.id),
-                    storedDraft.sourceMessageId,
-                    settings.baseCurrency,
-                    storedPayload.parsed
-                  )
-                ),
-                previewReplyOptions
-              );
-              await telegramDraftRepository!.save({
-                telegramUserId,
-                chatId: String(ctx.chat.id),
-                sourceMessageId: storedDraft.sourceMessageId,
-                previewMessageId: sent.message_id,
-                serializedDraft: serializeStoredBudgetDraft({
-                  ...storedPayload,
-                  previewMessageIds: [
-                    ...new Set([
-                      ...storedPayload.previewMessageIds,
-                      sent.message_id
-                    ])
-                  ]
-                }),
-                expiresAt: storedDraft.expiresAt
-              });
-              await telegramDraftRepository!.trash(storedDraft.pageId);
-              return;
-            }
-            let result;
-            try {
-              result = await financialSaveService!.save({
-                telegramUserId,
-                chatId: String(ctx.chat.id),
-                sourceMessageId: storedDraft.sourceMessageId,
-                baseCurrency: settings.baseCurrency,
-                parsed: storedPayload.parsed,
-                acceptBalanceMismatch: storedPayload.acceptBalanceMismatch
-              });
-            } catch (error: unknown) {
-              const friendlyError = userFacingSaveError(error);
-              console.error(
-                "Telegram confirmed budget save failed",
-                error instanceof Error ? error.message : "unknown error"
-              );
-              if (!friendlyError) {
-                try {
-                  await notionWriteFailureRepository.save({
-                    telegramUserId,
-                    chatId: String(ctx.chat.id),
-                    sourceMessageId: storedDraft.sourceMessageId,
-                    failedAt: new Date().toISOString(),
-                    errorMessage:
-                      error instanceof Error ? error.message : "unknown error",
-                    normalizedDraft: storedPayload.parsed
-                  });
-                  console.error("Normalized Notion write fallback created");
-                } catch (fallbackError: unknown) {
-                  console.error(
-                    "Normalized Notion write fallback failed",
-                    fallbackError instanceof Error
-                      ? fallbackError.message
-                      : "unknown error"
-                  );
-                }
-              }
-              await ctx.reply(
-                friendlyError ??
-                  "Не удалось завершить запись в Notion. Черновик и сообщения сохранены — можно ответить «всё верно» ещё раз после проверки."
-              );
-              return;
-            }
-            if (result.status === "balance_mismatch") {
-              const warning = formatBalanceMismatch(result);
-              const sent = await ctx.reply(warning, previewReplyOptions);
-              await telegramDraftRepository!.save({
-                telegramUserId,
-                chatId: String(ctx.chat.id),
-                sourceMessageId: storedDraft.sourceMessageId,
-                previewMessageId: sent.message_id,
-                serializedDraft: serializeStoredBudgetDraft({
-                  ...storedPayload,
-                  previewMessageIds: [
-                    ...new Set([
-                      ...storedPayload.previewMessageIds,
-                      sent.message_id
-                    ])
-                  ],
-                  acceptBalanceMismatch: true
-                }),
-                expiresAt: storedDraft.expiresAt
-              });
-              await telegramDraftRepository!.trash(storedDraft.pageId);
-              return;
-            }
-
-            await telegramDraftRepository!.trash(storedDraft.pageId);
-            await cleanupSavedTelegramMessages(
-              bot,
-              ctx.chat.id,
-              storedDraft.sourceMessageId,
-              storedPayload.previewMessageIds,
+            await confirmStoredPreview(
+              ctx,
+              telegramUserId,
+              settings,
+              storedDraft,
+              storedPayload,
               ctx.message.message_id
             );
-            await ctx.reply(formatSaveReceipt(result));
             return;
           }
           await ctx.reply(
@@ -508,7 +640,13 @@ export function createTelegramBotApp(
         }
 
         try {
-          const revised = await parser.revise(repliedPreview, instruction);
+          const revised = await parser.revise(
+            repliedPreview ??
+              formatBudgetMessagePreview(storedPayload!.parsed, {
+                savingEnabled: true
+              }),
+            instruction
+          );
           const revisedHasFinancialData = hasFinancialData(revised);
           const sent = await ctx.reply(
             await formatUserBudgetMessagePreview(
@@ -527,7 +665,7 @@ export function createTelegramBotApp(
               )
             ),
             revisedHasFinancialData
-              ? previewReplyOptions
+              ? createPreviewReplyOptions(revised)
               : { parse_mode: "HTML" as const }
           );
           if (storedDraft && storedPayload) {
@@ -588,7 +726,7 @@ export function createTelegramBotApp(
       const sent = await ctx.reply(
         preview,
         parsedHasFinancialData
-          ? previewReplyOptions
+          ? createPreviewReplyOptions(parsed)
           : { parse_mode: "HTML" as const }
       );
       if (financialSavingEnabled && parsedHasFinancialData) {
@@ -734,8 +872,8 @@ function buildBudgetMessagePreview(
 
   sections.push(
     clarifications.length
-      ? "<b>Сначала уточним эти пункты.</b> Ответьте на это сообщение обычным текстом. После исправленного черновика можно будет написать «всё верно»."
-      : "<b>Всё совпало?</b> Напишите «всё верно» или просто скажите, что поправить."
+      ? "<b>Сначала уточним эти пункты.</b> Нажмите «Исправить» и напишите уточнение обычным текстом."
+      : "<b>Всё совпало?</b> Нажмите «Всё верно» или «Исправить». Можно также ответить обычным текстом."
   );
 
   const summary = formatBudgetPreviewSummary(options);
@@ -925,6 +1063,23 @@ function createCurrencySearchKeyboard(
   return keyboard;
 }
 
+function createPreviewReplyOptions(parsed: ParsedBudgetMessageDraft) {
+  const keyboard = new InlineKeyboard();
+  const hasUnresolvedFields = collectClarificationRequests(
+    parsed,
+    orderTransactionsForPreview(parsed.transactions),
+    true
+  ).length > 0;
+  if (!hasUnresolvedFields) {
+    keyboard.text("Всё верно", PREVIEW_CONFIRM_CALLBACK);
+  }
+  keyboard.text("Исправить", PREVIEW_CORRECT_CALLBACK);
+  return {
+    parse_mode: "HTML" as const,
+    reply_markup: keyboard
+  };
+}
+
 function formatCurrencyOnboarding(): string {
   return [
     "<b>Привет! Давайте сначала выберем основную валюту.</b>",
@@ -947,7 +1102,7 @@ function formatFirstCurrencySelection(
     "Теперь напишите одну или несколько операций обычным сообщением. Например:",
     "Получил 500 USD за фриланс, перевёл 200 USD с Crypto на Вьетнамский счёт и потратил 120к VND на кофе по QR.",
     "",
-    "Я покажу понятный черновик. Если всё совпало, ответьте «всё верно». Если нет, можно написать: «3: валюта USD», «для всех счёт Карта» или «отмени 4».",
+    "Я покажу понятный черновик с кнопками «Всё верно» и «Исправить». Текстовое «всё верно» тоже работает. Для исправления можно написать: «3: валюта USD», «для всех счёт Карта» или «отмени 4».",
     "Слово «тоже» повторяет последнее исправление для следующего пункта. Для исправления долга напишите, например: «долг 2: счёт Карта». Полная подсказка всегда есть в /help.",
     "",
     savingEnabled ? SAVE_ENABLED_WARNING : PREVIEW_WARNING
@@ -1077,13 +1232,13 @@ async function cleanupSavedTelegramMessages(
   chatId: number,
   sourceMessageId: number,
   previewMessageIds: number[],
-  confirmationMessageId: number
+  confirmationMessageId?: number
 ): Promise<void> {
   const messageIds = [
     sourceMessageId,
     ...previewMessageIds,
     confirmationMessageId
-  ];
+  ].filter((messageId): messageId is number => messageId !== undefined);
   for (const messageId of new Set(messageIds)) {
     try {
       await bot.api.deleteMessage(chatId, messageId);
@@ -1110,7 +1265,7 @@ function formatHelpMessage(savingEnabled = false): string {
     "• Дал Ане в долг 50 EUR наличными",
     "• Аня вернула 20 EUR долга наличными",
     "",
-    "После черновика можно ответить «всё верно» или написать исправление: «3: валюта USD», «долг 2: счёт Карта», «для всех счёт Карта», «отмени 4». Обычный номер относится к разделу «Операции», а слово «долг» — к номеру в разделе «Долговые операции». Слово «тоже» повторяет последнее исправление для следующего пункта.",
+    "После черновика нажмите «Всё верно» или «Исправить». Текстовое «всё верно» тоже работает. Примеры исправлений: «3: валюта USD», «долг 2: счёт Карта», «для всех счёт Карта», «отмени 4». Обычный номер относится к разделу «Операции», а слово «долг» — к номеру в разделе «Долговые операции». Слово «тоже» повторяет последнее исправление для следующего пункта.",
     "Основная валюта ищется по коду или названию через /settings.",
     "Доходы и расходы на диаграммах открываются через /reports.",
     "",
