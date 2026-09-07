@@ -30,6 +30,7 @@ export function createFrankfurterCurrencyConverter(
   baseUrl = "https://api.frankfurter.dev/v2",
   fetchImpl: typeof fetch = fetch
 ): CurrencyConverter {
+  const rates = new Map<string, Promise<FrankfurterRate>>();
   return {
     async convert(input) {
       validateInput(input);
@@ -54,14 +55,21 @@ export function createFrankfurterCurrencyConverter(
       );
       url.searchParams.set("date", input.occurredOn);
 
-      const response = await fetchImpl(url);
-      if (!response.ok) {
-        const message = await readErrorMessage(response);
-        throw new Error(`Frankfurter conversion failed (${response.status}): ${message}`);
+      const key = url.toString();
+      let pending = rates.get(key);
+      if (!pending) {
+        pending = (async () => {
+          const response = await fetchImpl(url);
+          if (!response.ok) throw new Error(`Frankfurter conversion failed (${response.status}): ${await readErrorMessage(response)}`);
+          const data = await response.json() as FrankfurterRate;
+          validateRate(data, from, to, input.occurredOn);
+          return data;
+        })();
+        if (rates.size >= 128) rates.delete(rates.keys().next().value!);
+        rates.set(key, pending);
+        pending.catch(() => { if (rates.get(key) === pending) rates.delete(key); });
       }
-
-      const data = (await response.json()) as FrankfurterRate;
-      validateRate(data, from, to, input.occurredOn);
+      const data = await pending;
 
       return {
         originalAmount: input.amount,

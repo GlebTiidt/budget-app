@@ -107,3 +107,14 @@ test("rejects a future rate for a historical transaction", async () => {
     /after the transaction date/
   );
 });
+test("shares an in-flight historical rate across a large batch without sharing amounts", async () => {
+  let calls = 0;
+  const converter = createFrankfurterCurrencyConverter("https://example.test/v2", async () => {
+    calls++;
+    return Response.json({date:"2026-08-03",base:"VND",quote:"USD",rate:0.00004});
+  });
+  const results = await Promise.all(Array.from({length:36},(_,i)=>converter.convert({amount:(i+1)*1000,from:"VND",to:"USD",occurredOn:"2026-08-03"})));
+  assert.equal(calls,1);
+  assert.equal(results[0]!.convertedAmount,0.04);
+  assert.equal(results[35]!.convertedAmount,1.44);
+});

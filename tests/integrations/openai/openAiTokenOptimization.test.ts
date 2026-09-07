@@ -13,7 +13,7 @@ test("uses an explicit stable-prefix cache and no reasoning for GPT-5.6", () => 
     input: "changing TOON input"
   });
 
-  assert.equal(request.prompt_cache_key, "budget-parse-toon-v6");
+  assert.equal(request.prompt_cache_key, "budget-parse-toon-v8");
   assert.deepEqual(request.prompt_cache_options, {
     mode: "explicit",
     ttl: "30m"
@@ -22,7 +22,7 @@ test("uses an explicit stable-prefix cache and no reasoning for GPT-5.6", () => 
     effort: "none",
     context: "current_turn"
   });
-  assert.equal(request.max_output_tokens, 8_000);
+  assert.equal(request.max_output_tokens, 24_000);
 
   const input = request.input;
   assert.ok(Array.isArray(input));
@@ -51,7 +51,7 @@ test("keeps automatic cache compatibility without GPT-5.6-only fields", () => {
     reasoningEffort: "medium"
   });
 
-  assert.equal(request.prompt_cache_key, "budget-revise-toon-v6");
+  assert.equal(request.prompt_cache_key, "budget-revise-toon-v8");
   assert.equal(request.prompt_cache_options, undefined);
   assert.equal(request.reasoning, undefined);
   assert.ok(Array.isArray(request.input));

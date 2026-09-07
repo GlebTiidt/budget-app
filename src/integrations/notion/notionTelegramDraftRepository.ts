@@ -14,6 +14,7 @@ export type StoredTelegramDraft = PendingTelegramDraft & {
 export type TelegramDraftRepository = {
   save(draft: PendingTelegramDraft): Promise<StoredTelegramDraft>;
   find(chatId: string, previewMessageId: number): Promise<StoredTelegramDraft | null>;
+  findLatest?(chatId: string, telegramUserId: string): Promise<StoredTelegramDraft | null>;
   trash(pageId: string): Promise<void>;
 };
 
@@ -62,7 +63,49 @@ export function createNotionTelegramDraftRepository(
     },
 
     async find(chatId, previewMessageId) {
-      return findDraft(fetchImpl, options, chatId, previewMessageId);
+      const direct = await findDraft(fetchImpl, options, chatId, previewMessageId);
+      if (direct) return direct;
+      let cursor: string | undefined;
+      do {
+        const response = await fetchImpl(`https://api.notion.com/v1/data_sources/${encodeURIComponent(options.dataSourceId)}/query`, {
+          method: "POST", headers: notionHeaders(options.apiKey), body: JSON.stringify({
+            filter: { and: [
+              { property: "Chat ID", rich_text: { equals: chatId } },
+              { property: "Истекает", date: { after: new Date().toISOString() } },
+              { property: "Статус", select: { equals: "Активен" } }
+            ] }, page_size: 100, ...(cursor ? { start_cursor: cursor } : {})
+          })
+        });
+        if (!response.ok) throw new Error(`Notion preview part lookup failed (${response.status}).`);
+        const body = await response.json() as { results?: unknown[]; has_more?: boolean; next_cursor?: string };
+        if (!Array.isArray(body.results) || (body.has_more && !body.next_cursor)) throw new Error("Invalid preview part lookup.");
+        for (const row of body.results) {
+          const draft = mapStoredDraft(row);
+          const payload = JSON.parse(draft.serializedDraft) as { currentPreviewMessageIds?: number[] };
+          if (payload.currentPreviewMessageIds?.includes(previewMessageId)) return draft;
+        }
+        cursor = body.has_more ? body.next_cursor : undefined;
+      } while (cursor);
+      return null;
+    },
+
+    async findLatest(chatId, telegramUserId) {
+      validateMessageIdentity(chatId, 0);
+      if (!/^\d{1,20}$/.test(telegramUserId)) throw new Error("Invalid draft owner.");
+      const response = await fetchImpl(`https://api.notion.com/v1/data_sources/${encodeURIComponent(options.dataSourceId)}/query`, {
+        method: "POST", headers: notionHeaders(options.apiKey), body: JSON.stringify({
+          filter: { and: [
+            { property: "Chat ID", rich_text: { equals: chatId } },
+            { property: "Telegram ID пользователя", rich_text: { equals: telegramUserId } },
+            { property: "Истекает", date: { after: new Date().toISOString() } },
+            { property: "Статус", select: { equals: "Активен" } }
+          ] }, sorts: [{ property: "Preview сообщение ID", direction: "descending" }], page_size: 1
+        })
+      });
+      if (!response.ok) throw new Error(`Notion active draft query failed (${response.status}).`);
+      const body = await response.json() as { results?: unknown[] };
+      if (!Array.isArray(body.results)) throw new Error("Invalid active draft response.");
+      return body.results[0] ? mapStoredDraft(body.results[0]) : null;
     },
 
     async trash(pageId) {

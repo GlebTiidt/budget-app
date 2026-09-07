@@ -1,10 +1,11 @@
+import { calculateBalanceTimeline, type BalanceOperation, type BudgetHistory } from "../budget/balanceTimeline.js";
+import type { BudgetHistoryRepository } from "../integrations/notion/notionBudgetHistoryRepository.js";
 import type { SupportedCurrency } from "../budget/userSettings.js";
 import type { CurrencyConverter } from "../integrations/currency/frankfurterCurrencyConverter.js";
 import type { MasterBalanceRepository } from "../integrations/notion/notionMasterBalanceRepository.js";
 import type { MasterDebtRepository } from "../integrations/notion/notionMasterDebtRepository.js";
 import type {
-  MasterLedgerRepository,
-  MasterRunningBalanceRow
+  MasterLedgerRepository
 } from "../integrations/notion/notionMasterLedgerRepository.js";
 import type { MasterOpeningBalanceRepository } from "../integrations/notion/notionMasterOpeningBalanceRepository.js";
 import type { ParsedBudgetMessageDraft } from "../integrations/openai/openAiTransactionParser.js";
@@ -40,6 +41,7 @@ export type MasterBudgetSaveResult =
 
 type Options = {
   currencyConverter: CurrencyConverter;
+  historyRepository: BudgetHistoryRepository;
   ledgerRepository: MasterLedgerRepository;
   debtRepository: MasterDebtRepository;
   balanceRepository: MasterBalanceRepository;
@@ -82,13 +84,7 @@ export function createMasterBudgetSaveService(options: Options) {
       validateIdentity(input);
       const opening = await options.openingBalanceRepository.find();
       if (!opening || opening.currency !== input.baseCurrency) return null;
-      const anchor = await options.balanceRepository.findLatestAccepted();
-      if (!anchor || anchor.baseCurrency !== input.baseCurrency) return null;
-      const latest = latestRow(
-        await options.ledgerRepository.findLatestRunningBalanceAfter(anchor.order),
-        await options.debtRepository.findLatestRunningBalanceAfter(anchor.order)
-      );
-      let balance = latest?.runningBalance ?? anchor.balance;
+      const history = await options.historyRepository.read();
       const completeParsed: ParsedBudgetMessageDraft = {
         ...input.parsed,
         transactions: input.parsed.transactions.filter(
@@ -98,25 +94,15 @@ export function createMasterBudgetSaveService(options: Options) {
           (item) => item.amount !== null && item.currency !== null
         )
       };
-      const ordered = orderOperations(completeParsed);
-      for (const operation of ordered) {
-        if (operation.occurredOn < anchor.occurredOn) continue;
-        if (latest && operation.occurredOn < latest.occurredOn) return null;
+      const operations: BalanceOperation[] = [];
+      for (const [index, operation] of orderOperations(completeParsed).entries()) {
         const conversion = await options.currencyConverter.convert({
-          amount: operation.originalAmount,
-          from: operation.originalCurrency,
-          to: input.baseCurrency,
-          occurredOn: operation.occurredOn
+          amount: operation.originalAmount, from: operation.originalCurrency,
+          to: input.baseCurrency, occurredOn: operation.occurredOn
         });
-        balance = roundMoney(
-          balance +
-            balanceEffect(
-              { ...operation, baseAmount: conversion.convertedAmount },
-              completeParsed
-            )
-        );
+        operations.push(toHistoryOperation(input, { ...operation, baseAmount: conversion.convertedAmount }, index, completeParsed));
       }
-      return balance;
+      return calculateBalanceTimeline(opening, mergeHistory(history, operations)).currentBalance;
     },
 
     async save(input: MasterBudgetSaveInput): Promise<MasterBudgetSaveResult> {
@@ -130,35 +116,7 @@ export function createMasterBudgetSaveService(options: Options) {
         );
       }
 
-      const anchor = await options.balanceRepository.findLatestAccepted();
-      if (!anchor) {
-        throw new Error(
-          "Стартовый остаток настроен не полностью. Нужна проверка базы Notion."
-        );
-      }
-      if (anchor.baseCurrency !== input.baseCurrency) {
-        throw new Error("Валюта последнего остатка не совпадает с основной валютой.");
-      }
-      if (
-        input.parsed.balanceObservations.length > 0 &&
-        anchor.sourceId ===
-          sourceId(input, "balance", input.parsed.balanceObservations.length)
-      ) {
-        return {
-          status: "saved",
-          openingBalanceCreated: false,
-          transactionCount: input.parsed.transactions.length,
-          debtOperationCount: input.parsed.debtOperations.length,
-          balanceObservationCount: input.parsed.balanceObservations.length,
-          historicalOperationCount: [
-            ...input.parsed.transactions,
-            ...input.parsed.debtOperations
-          ].filter((item) => item.occurredOn < anchor.occurredOn).length,
-          currentBalance: anchor.balance,
-          baseCurrency: input.baseCurrency
-        };
-      }
-
+      const history = await options.historyRepository.read();
       const ordered = orderOperations(input.parsed);
       const converted = await Promise.all(
         ordered.map(async (operation) => {
@@ -177,59 +135,15 @@ export function createMasterBudgetSaveService(options: Options) {
       );
 
       const baseOrder = messageBaseOrder(input.sourceMessageId);
-      const latestBefore = latestRow(
-        await options.ledgerRepository.findLatestRunningBalanceBetween(
-          anchor.order,
-          baseOrder
-        ),
-        await options.debtRepository.findLatestRunningBalanceBetween(
-          anchor.order,
-          baseOrder
-        )
-      );
-      const latestOverall = latestRow(
-        await options.ledgerRepository.findLatestRunningBalanceAfter(anchor.order),
-        await options.debtRepository.findLatestRunningBalanceAfter(anchor.order)
-      );
-      const batchEnd =
-        baseOrder +
-        converted.length +
-        input.parsed.balanceObservations.length +
-        1;
-      if (latestOverall && latestOverall.order >= batchEnd) {
-        throw new Error(
-          "Этот черновик старше уже сохранённых операций. Сначала нужна перерасчётка более поздних остатков."
-        );
-      }
-      const active = converted.filter(
-        (operation) => operation.occurredOn >= anchor.occurredOn
-      );
-      if (
-        latestBefore &&
-        active.some(
-          (operation) => operation.occurredOn < latestBefore.occurredOn
-        )
-      ) {
-        throw new Error(
-          "Операция попадает внутрь уже рассчитанной истории после якоря. Сначала нужна перерасчётка последующих остатков."
-        );
-      }
-
-      let runningBalance = latestBefore?.runningBalance ?? anchor.balance;
-      const prepared = converted.map((operation, index) => {
-        const historical = operation.occurredOn < anchor.occurredOn;
-        if (!historical) {
-          runningBalance = roundMoney(
-            runningBalance + balanceEffect(operation, input.parsed)
-          );
-        }
-        return {
-          ...operation,
-          order: baseOrder + index + 1,
-          runningBalance: historical ? null : runningBalance,
-          historical
-        };
-      });
+      const proposed = converted.map((operation, index) => toHistoryOperation(input, operation, index, input.parsed));
+      const timeline = calculateBalanceTimeline(opening, mergeHistory(history, proposed));
+      let runningBalance = timeline.currentBalance;
+      const prepared = converted.map((operation, index) => ({
+        ...operation,
+        order: baseOrder + index + 1,
+        runningBalance: timeline.runningBalances.get(proposed[index]!.sourceId) ?? null,
+        historical: operation.occurredOn < opening.effectiveOn
+      }));
 
       const observations = await convertObservations(options, input);
       let observationData: null | {
@@ -238,9 +152,10 @@ export function createMasterBudgetSaveService(options: Options) {
         tolerance: number;
         status: "Совпадает" | "Принято пользователем";
       } = null;
-      if (observations.length > 0) {
+      const existingObservation = history.anchors.find(a => a.sourceId === sourceId(input, "balance", observations.length));
+      if (observations.length > 0 && !existingObservation) {
         const observationDate = observations[0]!.occurredOn;
-        const latestActiveDate = active.at(-1)?.occurredOn ?? anchor.occurredOn;
+        const latestActiveDate = [opening.effectiveOn, ...history.operations.map(o => o.occurredOn), ...history.anchors.map(a => a.occurredOn), ...converted.map(o => o.occurredOn)].sort().at(-1)!;
         if (observationDate < latestActiveDate) {
           throw new Error(
             "Дата общего остатка должна быть не раньше последней операции после якоря."
@@ -346,6 +261,7 @@ export function createMasterBudgetSaveService(options: Options) {
         runningBalance = observationData.total;
       }
 
+      runningBalance = await options.historyRepository.repair(opening);
       return {
         status: "saved",
         openingBalanceCreated: false,
@@ -589,12 +505,19 @@ function messageBaseOrder(messageId: number) {
   return value;
 }
 
-function latestRow(...rows: Array<MasterRunningBalanceRow | null>) {
-  return (
-    rows
-      .filter((row): row is MasterRunningBalanceRow => row !== null)
-      .sort((a, b) => b.order - a.order)[0] ?? null
-  );
+function mergeHistory(history: BudgetHistory, proposed: BalanceOperation[]): BudgetHistory {
+  const existing = new Set(history.operations.map(operation => operation.sourceId));
+  return { ...history, operations: [...history.operations, ...proposed.filter(operation => !existing.has(operation.sourceId))] };
+}
+
+function toHistoryOperation(input: MasterBudgetSaveInput, operation: ConvertedOperation, index: number, parsed: ParsedBudgetMessageDraft): BalanceOperation {
+  return {
+    pageId: "", sourceId: sourceId(input, operation.kind, operation.originalIndex + 1),
+    kind: operation.kind, occurredOn: operation.occurredOn,
+    order: messageBaseOrder(input.sourceMessageId) + index + 1,
+    baseAmount: operation.baseAmount, baseCurrency: input.baseCurrency,
+    effect: balanceEffect(operation, parsed), runningBalance: null
+  };
 }
 
 function kindOrder(kind: ConvertedOperation["kind"]) {

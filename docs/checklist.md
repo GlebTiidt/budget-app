@@ -146,7 +146,7 @@ Exit condition: tested conversions are deterministic and retain all audit fields
 - [x] Parse an informal message through OpenAI.
 - [x] Show the normalized draft and accept confirmation, corrections, or cancellation through an ordinary text reply.
 - [x] Convert confirmed owner operations into the selected base currency using their transaction dates and persist the selected currency beside every derived amount; the owner now uses USD.
-- [x] Calculate and show the anchored running balance after every complete current operation: income, borrowing, and collected repayments add; expense, repayment of borrowed money, and lending subtract; personal transfers do not change the total. Pre-anchor history remains analytics-only with an empty running balance.
+- [x] Calculate and show the anchored running balance after every complete current operation: income, borrowing, and collected repayments add; expense, repayment of borrowed money, and lending subtract; personal transfers do not change the total. Pre-anchor history remains analytics-only with an empty running balance. Fixed and reverified on 2026-09-06: calculate from paginated confirmed history, use date/order chronology, and treat the settings opening anchor as the start of its day regardless of imported observation order.
 - [ ] Recalculate the affected running balances after a backdated transaction is inserted, corrected, or deleted.
 - [ ] Save the confirmed transaction to Notion.
 - [x] Prevent duplicate writes using stable IDs derived from Telegram chat ID, source message ID, operation kind, and item index.
@@ -168,7 +168,7 @@ Exit condition: one real Telegram message completes the full confirmed path into
 - [x] Add a Telegram `/reports` entry and a Mini App with month selection plus animated bar, line, and doughnut views.
 - [x] Query the master's Notion transactions for a selected month with pagination; the live August 2026 read-only smoke query succeeded with an empty result set.
 - [x] Aggregate expenses by category in application code.
-- [ ] Implement `/month` summary text.
+- [x] Implement `/month` summary text, current/previous/named/ISO month questions, expense-category breakdowns, `/balance`, `/debts`, and `/history`; questions read confirmed owner data and leave pending drafts untouched.
 - [x] Add income-versus-expense totals and net difference to the animated master report; a verified running balance remains pending.
 - [ ] Show the latest verified running balance in the user's base currency as the current available total.
 - [ ] Add accumulated debt positions after the verified total balance in the bot's historical text report, grouped by original currency and counterparty; do not substitute current-message preview deltas for persisted totals.
@@ -181,7 +181,7 @@ Exit condition: the bot returns verified monthly totals and a chart whose segmen
 ## Phase 7 — Tests, Deployment, and Operations
 
 - [x] Add unit tests for config, validation, AI result normalization, conversion, aggregation, and the current Chart.js report-page contract.
-- [ ] Add running-balance tests for income, expense, transfer, same-day ordering, and backdated corrections.
+- [x] Add running-balance tests for successive income/expense messages, neutral transfers, same-day ordering, backdated inserts, corrupted imported ordering, idempotent retries, partial batches, and accepted reconciliation snapshots. Historical edit/delete UI remains a separate pending milestone.
 - [ ] Add the remaining integration tests with mocked OpenAI, Frankfurter, Notion, and Telegram responses.
 - [x] Run `npm run typecheck` after the currency, settings, and master-report implementation.
 - [x] Run `npm test`; all 78 current local tests pass across USD anchored balance calculation, multi-wallet opening totals, no-op transfer rejection, generic idempotent Notion repositories, persistent Telegram confirmation, cleanup, and normalized write-failure fallback.
@@ -248,7 +248,7 @@ Exit condition: an invited user has an isolated budget and custom categories wit
 
 ## Current Gate — Confirmed Notion Save
 
-The owner-only save flow is deployed and locally verified, and the live Notion schema uses generic base-currency fields with the owner profile set to USD. On 2026-08-31 the owner explicitly reset the ledger: the two 2026-08-08 wallet observations and their `267.11 USD` settings anchor were moved to Notion trash, all active transaction, debt, draft, observation, and settings rows were verified empty, and a new `1,587,104 VND` source observation was created for `Вьетнамский счёт` as a `60.31 USD` opening anchor using the official historical rate `0.000038 USD/VND`. Deployment `dpl_6NmJLyQXUoW61QwHgf627QYsXUTE` prevents unresolved or repeated wallet rows from reaching Notion and deterministically merges same-account rows only after explicit approval. Production deployment `dpl_BeMqSrj37keqzxUoXShDGXxA4kGr` adds native preview confirmation/correction buttons and purchase-direction prompt-cache `v6`; it passed 79 local tests, typecheck, build, the complete 18-request live parser suite, and the deployed webhook health check. The Telegram gate remains incomplete until the next real operation exercises the revised interaction and post-save message cleanup.
+The owner-only save flow is deployed and locally verified, and the live Notion schema uses generic base-currency fields with the owner profile set to USD. On 2026-08-31 the owner explicitly reset the ledger: the two 2026-08-08 wallet observations and their `267.11 USD` settings anchor were moved to Notion trash, all active transaction, debt, draft, observation, and settings rows were verified empty, and a new `1,587,104 VND` source observation was created for `Вьетнамский счёт` as a `60.31 USD` opening anchor using the official historical rate `0.000038 USD/VND`. Deployment `dpl_6NmJLyQXUoW61QwHgf627QYsXUTE` prevents unresolved or repeated wallet rows from reaching Notion and deterministically merges same-account rows only after explicit approval. Production deployment `dpl_BeMqSrj37keqzxUoXShDGXxA4kGr` adds native preview confirmation/correction buttons and purchase-direction prompt-cache `v6`; it passed 79 local tests, typecheck, build, the complete 18-request live parser suite, and the deployed webhook health check. The Telegram gate remains incomplete until the next real operation exercises the revised interaction and post-save message cleanup. The 2026-09-06 incident fix is now deployed as `dpl_8AH4fRQdJ9ovSgtC3yWiM794DvoL`; its verification and remaining scope are recorded under Current Next Actions.
 
 ### Owner Smoke Test
 
@@ -284,6 +284,36 @@ The owner-only save flow is deployed and locally verified, and the live Notion s
 - [ ] Mark confirmed save behavior verified only after the real Telegram smoke test passes.
 
 ## Current Next Actions
+
+### 2026-09-07 — preserve incident decisions
+
+- [x] Consolidate the owner's requested accounting, persistent draft context, read-only reporting, complete long-input handling, category fallback, safe recovery, and verified Vercel deployment requirements in `docs/rules.md`. Replace the obsolete stateless-preview and text-compaction wording. Documentation-only change: review consistency with `docs/architecture.md` and run `git diff --check`; the existing functional verification and production deployment below remain unchanged.
+
+### 2026-09-06 evening — long messages and category follow-ups
+
+- [x] Remove the 20-row Structured Output cap that silently lost the remainder of a multi-day message; support 100 transactions/debts, a 24,000-token output ceiling, and reject incomplete API responses. Prompt v8 explicitly preserves every date section, separate unknown-expense amounts, and both terms of subscription sums. Reject non-cancellation revisions that drop existing operations.
+- [x] Replace hard Telegram text truncation with balanced HTML pagination. Preserve every numbered row, note, clarification and final total; put actions on the final page and resolve replies to every current page through the same stored draft. Old page versions are excluded from alias lookup.
+- [x] Fix Cyrillic follow-up detection and apply `Нет категории` / `Без категории` deterministically as `Другое` only for uncategorized expenses. Preserve amounts, dates, known categories and unrelated ambiguities. Support `Покажи черновик` without parsing a new financial event.
+- [x] Reconstruct the affected full draft from the owner's supplied list, independently compare all 36 date/amount pairs and totals, retain the existing account clarification, and verify that no part of this batch was already persisted. Save a private backup and require a full preview refresh before confirmation; no expense was confirmed by this repair.
+- [x] Share in-flight historical FX rates by currency/date for large batches, evict failed requests, and extend the Vercel webhook budget to 180 seconds with a 170-second throwing timeout instead of acknowledging unfinished work.
+- [x] Run `npm run typecheck`, `npm run build`, `npm test` (96 passed), and the complete live parser suite (15 parse cases, five revision cases; 20 passed). The large synthetic case verifies all 36 amount/date pairs, not only its item count.
+- [x] Deploy the evening fix: `dpl_4EJzcLBekoBaSSRWJT252tq1MQqC` is `Ready` at `https://budget-app-vert-one.vercel.app`. Production webhook health returns `200`, unsigned reports return `401`. A live-Notion read through the Telegram handler verifies the recovered 36-operation preview across two complete pages, with actions only on the last page; outbound Telegram messages and financial/draft writes were intercepted for this check. Actual owner confirmation remains pending.
+
+### 2026-09-06 incident investigation
+
+Read-only Notion inspection confirmed that operations remain stored, but the imported opening anchor's order exceeds the Telegram-derived transaction orders. Both latest-balance queries therefore discard the saved history. A local synthetic reproduction returned the opening balance despite an existing expense; using a compatible anchor order made the same query include that expense. Existing stored running balances also require repair: changing only the anchor order would retain incorrect derived values. No production data or application code was changed during this investigation.
+
+The saved transfer correction also contains an unstated balance observation. Revision currently receives rendered Telegram text, and its instructions classify the total summary as an observation; this lets an application-calculated total become purported user evidence. Ordinary messages without `reply_to_message` bypass the pending draft entirely. Vercel log queries for the reported incident interval and the past 24 hours returned no entries, so runtime-log privacy and error checks remain unverified.
+
+- [x] Repair the imported anchor ordering and recalculate existing derived balances from original confirmed operations. Save a private ignored backup, verify every original operation is unchanged, and verify successive messages/backdated inserts with synthetic regression coverage. Production repair completed on 2026-09-06 with readback verification.
+- [x] Revise from the stored normalized draft in visible item order; exclude calculated summaries and guard against model-added observations. Repair the affected pending draft from a private backup by removing only its unasserted observation, keeping the transfer unconfirmed. Live v7 suite: 14 parse cases and five revisions passed.
+- [x] Preserve pending-draft context for budget questions and unthreaded explicit corrections/confirmations. Scope pending lookup to chat, owner, active status and expiry; financial statements start separate drafts. Mocked Telegram regression verifies read-only questions, structured corrections, independent new expenses and denied non-owner history access.
+
+The incident code passed `npm run typecheck`, `npm test` (91 tests), `npm run build`, and the complete live parser suite (19 requests, 29,981 total tokens). The current balance is now calculated from original history for previews and read-only questions; saving recalculates stored derived fields. Receipt delivery precedes cleanup; incomplete drafts no longer invite confirmation. A master base-currency change is blocked while conversion of existing history is not implemented, preventing mislabeled totals.
+
+- [x] Deploy this incident fix to Vercel Production: `dpl_8AH4fRQdJ9ovSgtC3yWiM794DvoL` is `Ready` at `https://budget-app-vert-one.vercel.app`. Verify webhook health `200`, unsigned reports `401`, a signed owner report `200` with correct category totals, the updated command menu, zero pending Telegram updates and no webhook error. Four live-Notion question checks passed through the Telegram handler with outbound messaging intercepted (no financial writes or test chat messages). Configure Telegram webhook `max_connections: 1` without dropping pending updates to serialize owner updates and avoid overlapping confirmations.
+
+The broader original smoke-test sequence below still applies; no unchecked future milestone is implied complete by the incident repair.
 
 1. Re-run the failed wallet-ambiguity interaction in Telegram with synthetic amounts, verify that confirmation is blocked until clarification and that `пусть будет один счёт` produces one summed row, then cancel the synthetic draft.
 2. Confirm the next real operation through Telegram and verify that source/preview messages disappear only after the retained receipt arrives; do not resubmit the opening balances.

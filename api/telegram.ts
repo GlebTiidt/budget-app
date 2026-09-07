@@ -13,8 +13,8 @@ if (!config.telegramBotToken) {
 const bot = createTelegramBotApp(config);
 const telegramWebhook = webhookCallback(bot, "http", {
   secretToken: deriveTelegramWebhookSecret(config.telegramBotToken),
-  timeoutMilliseconds: 55_000,
-  onTimeout: "return"
+  timeoutMilliseconds: 170_000,
+  onTimeout: "throw"
 });
 
 export default async function handler(

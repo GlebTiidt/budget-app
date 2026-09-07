@@ -78,6 +78,29 @@ function pendingDraft(): PendingTelegramDraft {
   };
 }
 
+test("reply to an intermediate page resolves the active full draft, excluding obsolete pages", async () => {
+  let calls = 0;
+  const draft = { ...pendingDraft(), serializedDraft: JSON.stringify({ currentPreviewMessageIds: [18,19,20], previewMessageIds: [5,18,19,20] }) };
+  const repository = createNotionTelegramDraftRepository({ apiKey: "synthetic", dataSourceId: "drafts", fetchImpl: async () => {
+    calls++;
+    return Response.json({ results: calls % 2 ? [] : [notionDraftPage(draft)], has_more: false });
+  } });
+  assert.equal((await repository.find("100001",18))?.previewMessageId,20);
+  assert.equal(await repository.find("100001",5),null);
+});
+
+test("latest pending draft query scopes chat, owner, expiry and active status", async () => {
+  let query: any;
+  const repository = createNotionTelegramDraftRepository({ apiKey: "synthetic", dataSourceId: "draft-source", fetchImpl: async (_url, init) => {
+    query = JSON.parse(String(init?.body));
+    return Response.json({ results: [notionDraftPage(pendingDraft())] });
+  } });
+  assert.equal((await repository.findLatest!("100001", "100001"))?.sourceMessageId, 10);
+  assert.deepEqual(query.filter.and.slice(0, 2), [{ property: "Chat ID", rich_text: { equals: "100001" } }, { property: "Telegram ID пользователя", rich_text: { equals: "100001" } }]);
+  assert.ok(query.filter.and[2].date.after);
+  assert.equal(query.sorts[0].direction, "descending");
+});
+
 function notionDraftPage(draft: PendingTelegramDraft) {
   return {
     id: "draft-page",
@@ -90,7 +113,7 @@ function notionDraftPage(draft: PendingTelegramDraft) {
         rich_text: [
           { plain_text: draft.serializedDraft.slice(0, 1_900) },
           { plain_text: draft.serializedDraft.slice(1_900) }
-        ]
+        ].filter(item => item.plain_text.length > 0)
       },
       "Истекает": { date: { start: draft.expiresAt } }
     }

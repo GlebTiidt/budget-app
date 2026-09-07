@@ -50,3 +50,11 @@ The multi-wallet contract added a thirteenth parse case and a fourth revision fi
 | [LiteLLM](https://github.com/BerriAI/litellm) | Multi-provider gateway, routing, caching, budgets, and cost tracking. | Not added while the app has one provider, one model family, and one owner. A proxy adds operations and another trust boundary without reducing this prompt's tokens. |
 
 Semantic response caching is intentionally excluded: two financially different messages can be linguistically similar, and returning a cached amount or account route would be unsafe. Reconsider compression or gateway layers only for long read-only context, multi-provider routing, or a substantially larger evaluation/observability workload.
+
+## 2026-09-06 structured revision verification (v7)
+
+Revision now receives the stored structured draft rather than a rendered Telegram summary. The complete live suite passed 14 parser cases and five revision cases, including a transfer account clarification with no new balance observation. All 19 requests used reasoning `none`: 26,422 input tokens, 15,769 cache-read tokens, 1,213 cache-write tokens, 3,559 output tokens, zero reasoning tokens, and 29,981 total tokens. The revision prefix remains unpadded. These are measurements for this suite, not a general cost guarantee.
+
+## 2026-09-06 long-list verification (v8)
+
+The new long-list fixture contains 36 expenses and compares every parsed amount/date pair to its source, including a sum on a subscription and explicit undefined expenses. The full suite passed 15 parser cases and five revisions: 20 requests, 30,337 input tokens, 20,475 cache-read tokens, zero cache-write tokens on the warm run, 5,986 output tokens, zero reasoning tokens, 36,323 total tokens. Structured Output row capacity is 100 per operation kind and the response ceiling is 24,000 tokens; incomplete API responses are rejected rather than used as partial financial totals.

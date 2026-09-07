@@ -13,7 +13,8 @@ type ParsePromptData = ToonPromptContext & {
 };
 
 type RevisionPromptData = ToonPromptContext & {
-  currentPreviewLines: string[];
+  currentPreviewLines?: string[];
+  currentDraft?: unknown;
   userReplyLines: string[];
 };
 
@@ -31,7 +32,7 @@ export function serializeRevisionPromptToToon(
   return wrapToonData({
     context: selectContext(data),
     catalogs: selectCatalogs(data),
-    currentPreviewLines: data.currentPreviewLines,
+    ...(data.currentDraft ? { currentDraft: data.currentDraft } : { currentPreviewLines: data.currentPreviewLines }),
     userReplyLines: data.userReplyLines
   });
 }

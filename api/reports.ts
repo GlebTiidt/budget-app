@@ -95,7 +95,7 @@ export default async function handler(
   } catch (error: unknown) {
     console.error(
       "Master report query failed",
-      error instanceof Error ? error.message : "unknown error"
+      error instanceof Error ? error.name : "unknown error"
     );
     response.statusCode = 502;
     response.end(JSON.stringify({ error: "report_query_failed" }));

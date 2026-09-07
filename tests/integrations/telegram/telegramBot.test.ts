@@ -1,3 +1,4 @@
+import { splitTelegramHtml } from "../../../src/integrations/telegram/splitTelegramHtml.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadConfig } from "../../../src/config/loadConfig.js";
@@ -374,7 +375,7 @@ test("escapes dynamic text before sending Telegram HTML", () => {
   assert.doesNotMatch(preview, /<small>/);
 });
 
-test("keeps a maximum-size batch inside one Telegram message", () => {
+test("keeps every operation in a maximum-size batch across Telegram messages", () => {
   const longText = "Очень длинное синтетическое описание ".repeat(20);
   const preview = formatBudgetMessagePreview({
     transactions: Array.from({ length: 20 }, (_, index) => ({
@@ -389,7 +390,11 @@ test("keeps a maximum-size batch inside one Telegram message", () => {
     ambiguities: [longText]
   });
 
-  assert.ok(renderedTelegramLength(preview) <= 4096);
+  const parts = splitTelegramHtml(preview);
+  assert.ok(parts.length > 1);
+  assert.ok(parts.every(part => renderedTelegramLength(part) <= 4096));
+  assert.equal(parts.map(renderedTelegramTextForTest).join(""), renderedTelegramTextForTest(preview));
+  assert.match(preview, /20\. Расход/);
   assert.match(
     preview,
     /Пока это только черновик — в Notion ничего не записано\.$/
@@ -418,7 +423,7 @@ test("Telegram revises a combined preview from a normal text reply", async () =>
       return initialParsed;
     },
     async revise(preview, instruction) {
-      revisionCalls.push({ preview, instruction });
+      revisionCalls.push({ preview: typeof preview === "string" ? preview : JSON.stringify(preview), instruction });
       return {
         transactions: [
           {
@@ -1217,6 +1222,86 @@ function balanceOnlyDraftForTelegram(): ParsedBudgetMessageDraft {
   return { transactions: [], debtOperations: [], balanceObservations: [{ amount: 132, currency: "EUR", occurredOn: "2026-08-08", account: null, confidence: 1, ambiguities: [] }], ambiguities: [] };
 }
 
+test("unthreaded questions preserve a durable draft, corrections use normalized data, and new expenses stay separate", async () => {
+  const parsed: ParsedBudgetMessageDraft = { transactions: [{ ...createDraft("transfer"), category: null, account: null, destinationAccount: "Вьетнамский счёт" }], debtOperations: [], balanceObservations: [], ambiguities: [] };
+  let stored: StoredTelegramDraft | null = { pageId: "draft", telegramUserId: "100001", chatId: "100001", sourceMessageId: 10, previewMessageId: 1, serializedDraft: JSON.stringify({ parsed, previewMessageIds: [1], acceptBalanceMismatch: false }), expiresAt: "2099-01-01T00:00:00Z" };
+  const sent: Array<Record<string, unknown>> = [];
+  let revisions = 0, parses = 0, saves = 0, answers = 0;
+  const bot = createTelegramBotApp(loadConfig({ TELEGRAM_BOT_TOKEN: "123456:test", TELEGRAM_ALLOWED_USER_IDS: "100001" }), {
+    userSettingsRepository: createUserSettingsRepository(), currencyConverter: passthroughCurrencyConverter,
+    parser: {
+      async parse() { parses++; return { ...parsed, transactions: [{ ...createDraft("expense"), account: "Карта" }] }; },
+      async revise(source) { revisions++; assert.deepEqual(source, parsed); return { ...parsed, transactions: [{ ...parsed.transactions[0]!, account: "Crypto" }] }; }
+    },
+    budgetAnswerService: { async answer() { answers++; return "Общий остаток: 250 EUR. Перевод между своими счетами его не меняет."; } },
+    telegramDraftRepository: {
+      async find() { return stored; }, async findLatest() { return stored; },
+      async save(value) { stored = { ...value, pageId: `draft-${value.previewMessageId}` }; return stored; },
+      async trash(id) { if (stored?.pageId === id) stored = null; }
+    },
+    financialSaveService: { async previewCurrentBalance() { return 250; }, async save() { saves++; throw new Error("must not save"); } }
+  });
+  bot.api.config.use((async (_previous: unknown, method: string, payload: Record<string, unknown>) => {
+    if (method === "getMe") return { ok: true, result: { id: 123456, is_bot: true, first_name: "Bot", username: "bot" } };
+    if (method === "sendChatAction") return { ok: true, result: true };
+    if (method === "sendMessage") { sent.push(payload); return { ok: true, result: { message_id: 100 + sent.length, date: 1, chat: { id: 100001, type: "private" }, text: payload.text } }; }
+    throw new Error(`Unexpected Telegram method: ${method}`);
+  }) as Parameters<typeof bot.api.config.use>[0]);
+  await bot.init();
+  const send = (id: number, text: string, user = 100001) => bot.handleUpdate({ update_id: id, message: { message_id: id, date: 1, chat: { id: user, type: "private", first_name: "Owner" }, from: { id: user, is_bot: false, first_name: "Owner" }, text } });
+  await send(20, "Какой у меня остаток?");
+  assert.equal(answers, 1); assert.equal(stored?.pageId, "draft"); assert.equal(parses, 0); assert.equal(revisions, 0);
+  await send(21, "Со своего крипто кошелька");
+  assert.equal(revisions, 1); assert.equal(parses, 0); assert.equal(saves, 0);
+  assert.equal(JSON.parse(stored!.serializedDraft).parsed.balanceObservations.length, 0);
+  await send(22, "Потратил 50 USD на еду с карты");
+  assert.equal(parses, 1); assert.equal(revisions, 1);
+  await send(23, "Какой у меня остаток?", 100002);
+  assert.equal(answers, 1, "another user cannot read master history");
+});
+
+test("a recovered large draft refreshes before confirmation and category reply preserves every page", async () => {
+  const parsed: ParsedBudgetMessageDraft = { transactions: Array.from({length:36},(_,i)=>({ ...createDraft("expense"), description: `Тестовая покупка номер ${i+1}`, category: "Другое", account: "Вьетнамский счёт" })), debtOperations: [], balanceObservations: [], ambiguities: [] };
+  let stored: StoredTelegramDraft | null = { pageId: "draft", telegramUserId: "100001", chatId: "100001", sourceMessageId: 10, previewMessageId: 1, serializedDraft: JSON.stringify({ parsed, previewMessageIds: [1], acceptBalanceMismatch: false, requiresPreviewRefresh: true }), expiresAt: "2099-01-01T00:00:00Z" };
+  const sent: Array<Record<string, unknown>> = [];
+  let revisions = 0, parses = 0, saves = 0, answers = 0;
+  const bot = createTelegramBotApp(loadConfig({ TELEGRAM_BOT_TOKEN: "123456:test", TELEGRAM_ALLOWED_USER_IDS: "100001" }), {
+    userSettingsRepository: createUserSettingsRepository(), currencyConverter: passthroughCurrencyConverter,
+    parser: {
+      async parse() { parses++; return { ...parsed, transactions: [{ ...createDraft("expense"), account: "Карта" }] }; },
+      async revise(source) { revisions++; assert.deepEqual(source, parsed); return { ...parsed, transactions: [{ ...parsed.transactions[0]!, account: "Crypto" }] }; }
+    },
+    budgetAnswerService: { async answer() { answers++; return "Общий остаток: 250 EUR. Перевод между своими счетами его не меняет."; } },
+    telegramDraftRepository: {
+      async find() { return stored; }, async findLatest() { return stored; },
+      async save(value) { stored = { ...value, pageId: `draft-${value.previewMessageId}` }; return stored; },
+      async trash(id) { if (stored?.pageId === id) stored = null; }
+    },
+    financialSaveService: { async previewCurrentBalance() { return 250; }, async save() { saves++; throw new Error("must not save"); } }
+  });
+  bot.api.config.use((async (_previous: unknown, method: string, payload: Record<string, unknown>) => {
+    if (method === "getMe") return { ok: true, result: { id: 123456, is_bot: true, first_name: "Bot", username: "bot" } };
+    if (method === "sendChatAction") return { ok: true, result: true };
+    if (method === "sendMessage") { sent.push(payload); return { ok: true, result: { message_id: 100 + sent.length, date: 1, chat: { id: 100001, type: "private" }, text: payload.text } }; }
+    throw new Error(`Unexpected Telegram method: ${method}`);
+  }) as Parameters<typeof bot.api.config.use>[0]);
+  await bot.init();
+  const send = (id: number, text: string, user = 100001) => bot.handleUpdate({ update_id: id, message: { message_id: id, date: 1, chat: { id: user, type: "private", first_name: "Owner" }, from: { id: user, is_bot: false, first_name: "Owner" }, text } });
+  await send(20, "всё верно");
+  assert.equal(saves,0,"a repaired draft must be shown in full before saving");
+  assert.ok(sent.length>1);
+  assert.equal(JSON.parse(stored!.serializedDraft).parsed.transactions.length,36);
+  assert.equal(JSON.parse(stored!.serializedDraft).requiresPreviewRefresh,false);
+  const pageCount=sent.length;
+  assert.ok(sent.slice(0,-1).every(p=>!p.reply_markup));
+  assert.match(JSON.stringify(sent.at(-1)!.reply_markup),/preview:confirm/);
+  assert.match(sent.map(p=>p.text).join(""),/36\. Расход/);
+  await send(21,"Нет категории");
+  assert.equal(revisions,0);assert.equal(parses,0);assert.equal(saves,0);
+  assert.equal(JSON.parse(stored!.serializedDraft).parsed.transactions.length,36);
+  assert.ok(sent.length>pageCount);
+});
+
 function createDraft(
   direction: "expense" | "income" | "transfer"
 ): ParsedTransactionDraft {
@@ -1291,3 +1376,5 @@ function renderedTelegramLength(value: string): number {
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&").length;
 }
+
+function renderedTelegramTextForTest(value: string) { return value.replace(/<\/?b>/g, ""); }

@@ -61,6 +61,16 @@ const tokenUsage: OpenAiTokenUsage[] = [];
 
 const verificationCases: VerificationCase[] = [
   {
+    name: "long multi-day ledger retains all 36 expenses and explicit subscription sums",
+    input: [
+      ...[1,2,3].flatMap(day => [`${day} августа:`, ...Array.from({length:12}, (_,i) => i === 11 ? "1700+2300 донгов подписка YouTube" : `${(day*10000)+(i+1)*1000} донгов ${i===10 ? "неопределенная трата" : "кофе"}`)]),
+      "Все с вьетнамского счета."
+    ].join("\n"),
+    expectedDirections: { income: 0, expense: 36, transfer: 0 },
+    expectedBalanceObservations: 0,
+    expectedTransactions: [{amount:4000,currency:"VND",direction:"expense",category:"Подписки",account:"Вьетнамский счёт"},{amount:41000,currency:"VND",direction:"expense",category:"Другое"}]
+  },
+  {
     name: "complex message: advance, four expenses, current balance",
     input:
       "Вчера у меня было 240 USD, которые я обменял на донги. Сегодня осталось 30к донгов. Оплатил поездку за 1800000 донгов, визу за 25 USD, купил билет за 420к донгов и оплатил рабочий сервис за 9 USD. Эти 240 USD я получил как аванс от работодателя.",
@@ -285,7 +295,7 @@ let walletRevisionSource: ParsedBudgetMessageDraft | undefined = revisionsOnly
 
 for (const [index, verificationCase] of (revisionsOnly ? [] : verificationCases).entries()) {
   const parsed = await parser.parse(verificationCase.input, fixedNow);
-  if (index === 0) {
+  if (verificationCase.name.startsWith("complex message:")) {
     revisionSource = parsed;
   }
   if ((verificationCase.expectedDebtOperations?.length ?? 0) > 0) {
@@ -349,7 +359,7 @@ let debtRevisionPassed = false;
 let walletRevisionPassed = false;
 if (revisionSource) {
   const revised = await parser.revise(
-    formatBudgetMessagePreview(revisionSource),
+    revisionSource,
     [
       "1: сначала через внешний кошелёк, потом на Вьетнамский счёт",
       "2: Вьетнамский счёт",
@@ -381,7 +391,7 @@ if (revisionSource) {
   }
 
   const routed = await parser.revise(
-    formatBudgetMessagePreview(revisionSource),
+    revisionSource,
     [
       "1: Аванс изначально Crypto, потом перевод всей суммы на вьет счёт",
       "2: Вьет счёт",
@@ -419,7 +429,7 @@ if (revisionSource) {
 
 if (debtRevisionSource) {
   const revisedDebt = await parser.revise(
-    formatBudgetMessagePreview(debtRevisionSource),
+    debtRevisionSource,
     "долг 1: счёт Сбережения",
     fixedNow
   );
@@ -440,7 +450,7 @@ if (debtRevisionSource) {
 
 if (walletRevisionSource) {
   const revisedWallets = await parser.revise(
-    formatBudgetMessagePreview(walletRevisionSource),
+    walletRevisionSource,
     "остаток Карта: 550 USD",
     fixedNow
   );
@@ -463,12 +473,21 @@ if (walletRevisionSource) {
   );
 }
 
+const transferDraft: ParsedBudgetMessageDraft = {
+  transactions: [{ amount: 175, currency: "USD", direction: "transfer", occurredOn: "2026-08-03", category: null, account: null, destinationAccount: "Вьетнамский счёт", description: "Перевод между своими счетами", note: "Конвертация в VND", confidence: 0.8, ambiguities: ["Не указан счёт-источник"] }],
+  debtOperations: [], balanceObservations: [], ambiguities: []
+};
+const transferRevision = await parser.revise(transferDraft, "Со своего крипто кошелька", fixedNow);
+const transferProvenancePassed = transferRevision.transactions.length === 1 && transferRevision.transactions[0]?.account === "Crypto" && transferRevision.transactions[0]?.direction === "transfer" && transferRevision.transactions[0]?.occurredOn === "2026-08-03" && transferRevision.balanceObservations.length === 0;
+console.log(`Live transfer balance provenance: ${transferProvenancePassed ? "PASS" : "FAIL"}`);
+
 if (
   passed !== verificationCases.length ||
   !revisionPassed ||
   !accountTransferRevisionPassed ||
   !debtRevisionPassed ||
-  !walletRevisionPassed
+  !walletRevisionPassed ||
+  !transferProvenancePassed
 ) {
   process.exitCode = 1;
 }
@@ -480,6 +499,12 @@ function verifyResult(
   verificationCase: VerificationCase
 ): string[] {
   const errors: string[] = [];
+  if (verificationCase.name.startsWith("long multi-day")) {
+    const expected = [1,2,3].flatMap(day => Array.from({length:12}, (_,i) => `${day}:${i===11?4000:day*10000+(i+1)*1000}`)).sort();
+    const actual = parsed.transactions.map(t=>`${Number(t.occurredOn.slice(-2))}:${t.amount}`).sort();
+    if (JSON.stringify(expected)!==JSON.stringify(actual)) errors.push("Long input amount/date coverage differs from source.");
+  }
+
   const actualDirections = countDirections(parsed);
 
   for (const direction of ["income", "expense", "transfer"] as const) {

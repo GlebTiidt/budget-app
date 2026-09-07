@@ -90,3 +90,17 @@ Telegram text ------------------------------------------+
 ```
 
 If on-device recognition is unavailable or insufficient, the iOS client uploads only the captured clip to a server-side transcription endpoint. API keys remain on the server. A daily note is parsed into multiple drafts, but each draft follows the same confirmation and validation path as an immediate transaction.
+
+## History Calculation and Conversational Queries
+
+`balanceTimeline` calculates from confirmed operation amounts and accepted observations. It orders events by date and stable message order, treats the settings opening anchor as the beginning of its day, and ignores the imported opening observation's arbitrary order. No running-balance column is trusted as an input. The paginated `notionBudgetHistoryRepository` reads transactions, debts, and accepted anchors and repairs only derived running-balance properties after saves. Preview merging excludes source IDs already persisted, making retries neutral. The maintenance command `node --env-file=.env.local dist/scripts/repairMasterBudget.js` shows a dry run; `--apply` writes a private ignored backup, normalizes an imported opening order, repairs derived values, and verifies that original operations were preserved.
+
+`budgetQuestion` routes ordinary Russian questions and `/balance`, `/month`, `/debts`, `/history` to `budgetAnswerService`. It calculates owner-only totals from the same confirmed history, supports current/previous/named/ISO months, and lists expense categories or original-currency debt positions. Questions never write financial records or replace a draft. Unthreaded explicit corrections/confirmations use the most recent unexpired draft scoped by chat and owner; financial statements start a separate preview. Correction input is the stored structured draft in visible item order, with no calculated Telegram summary. A guard prevents model-added balances on transaction-only corrections without a newly asserted balance.
+
+The owner Vercel webhook is configured with Telegram `max_connections: 1` and preserves pending updates. This serializes Telegram delivery on the personal deployment; Notion source-ID checks remain idempotent on retries, but Notion is not a transactional multi-writer store.
+
+## Long Input Integrity
+
+The parser schema supports up to 100 transaction rows and 100 debt rows with a 24,000-token ceiling. Incomplete Responses output is rejected; the v8 prompt processes every dated section, carries explicit currency context, and keeps all listed unknown expenses. Ordinary revisions cannot silently reduce transaction/debt counts. Telegram formats the complete preview and splits only at safe HTML token boundaries, preserving global numbering and putting the summary/actions at the end. One stored draft records all current preview page IDs separately from cleanup history; intermediate-page replies resolve to the canonical current draft. Recovery sets `requiresPreviewRefresh` so an old incomplete preview cannot authorize newly restored rows without review.
+
+Frankfurter rate requests share one in-flight promise per date/currency pair. Per-operation amounts and rounding remain independent; failed rate requests are evicted. The personal Vercel webhook allows 180 seconds, with a 170-second application timeout that fails rather than silently acknowledging incomplete work.
